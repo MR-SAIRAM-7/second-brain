@@ -1,0 +1,27 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+model KnowledgeItem {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  type      String
+  sourceUrl String?
+  tags      String[]
+  summary   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String   @default("user1")
+  metadata  Json?
+  
+  // Requires pgvector extension
+  embedding Unsupported("vector(768)")? 
+}
