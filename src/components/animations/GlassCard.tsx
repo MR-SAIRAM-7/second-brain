@@ -1,8 +1,8 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode, type HTMLAttributes } from 'react';
 import { gsap } from 'gsap';
 import { cn } from '@/lib/utils';
 
-interface GlassCardProps {
+interface GlassCardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
   className?: string;
   tiltAmount?: number;
@@ -14,6 +14,7 @@ export default function GlassCard({
   className = '',
   tiltAmount = 10,
   glowColor = 'rgba(79, 70, 229, 0.3)',
+  ...divProps
 }: GlassCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
@@ -78,6 +79,7 @@ export default function GlassCard({
         boxShadow: isHovered ? `0 0 40px ${glowColor}` : 'none',
         transformStyle: 'preserve-3d',
       }}
+      {...divProps}
       onMouseMove={handleMouseMove}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

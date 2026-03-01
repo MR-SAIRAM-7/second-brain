@@ -1,4 +1,5 @@
 import type { KnowledgeItem, AIQueryResult, KnowledgeType } from '@/types';
+import type { GraphResult, MindMapResult } from '@/types/ai';
 
 const API_BASE = '/api/public/brain';
 const API_KEY = import.meta.env.VITE_API_KEY || 'dev-key';
@@ -52,6 +53,36 @@ export const aiService = {
 
   classifyType: async (_content: string, _title: string): Promise<KnowledgeType> => {
     return 'note';
+  },
+
+  mindMap: async (title: string, content: string): Promise<MindMapResult> => {
+    const res = await fetch(`${API_BASE}/mindmap`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ title, content }),
+    });
+    if (!res.ok) {
+      return { map: 'Mind map generation failed.' };
+    }
+    const data = await res.json();
+    return { map: data.data?.map || 'No map generated.' };
+  },
+
+  knowledgeGraph: async (title: string, content: string): Promise<GraphResult> => {
+    const res = await fetch(`${API_BASE}/graph`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ title, content }),
+    });
+    if (!res.ok) {
+      return { nodes: [], edges: [], plainText: 'Graph generation failed.' };
+    }
+    const data = await res.json();
+    return {
+      nodes: data.data?.nodes || [],
+      edges: data.data?.edges || [],
+      plainText: data.data?.plainText || 'No graph generated.',
+    };
   },
 };
 

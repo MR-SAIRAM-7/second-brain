@@ -98,4 +98,76 @@ Answer:`;
             };
         }
     },
+
+    // Generate a concise mind map in markdown bullets (3-level tree)
+    mindMap: async (title: string, content: string): Promise<string> => {
+        const prompt = `You are a note-to-mindmap generator.
+Return a clear bullet hierarchy (markdown) with up to 3 levels based on the note title and content.
+Guidelines:
+- Root: the title.
+- 4-8 main branches with short phrases.
+- Under each branch, 1-3 concise child bullets (no paragraphs).
+- No extra prose before or after.
+
+Title: ${title}
+Content:
+${content}
+
+Mind map (markdown bullets):`;
+
+        const result = await generateWithRetry(prompt);
+        return result.response.text().trim();
+    },
+
+    // Generate a lightweight knowledge graph description
+    knowledgeGraph: async (title: string, content: string): Promise<{ nodes: { id: string, label: string }[], edges: { source: string, target: string, label?: string }[], plainText: string }> => {
+        const prompt = `You are a knowledge graph extractor.
+Return JSON with nodes and edges extracted from the note. Keep it small (<=15 nodes).
+Schema: {"nodes":[{"id":"string","label":"string"}],"edges":[{"source":"string","target":"string","label":"string"}]}
+Rules:
+- Always include the note title as a node id "title" with label equal to the title text.
+- Prefer concise labels; lowercase ids with dashes.
+- Edges should capture relationships like topic -> subtopic, concept -> detail, tag -> title.
+Provide ONLY the JSON.`;
+
+        try {
+            const result = await generateWithRetry(`${prompt}
+
+Title: ${title}
+Content:
+${content}`);
+            const text = result.response.text();
+            const jsonStart = text.indexOf('{');
+            const jsonEnd = text.lastIndexOf('}');
+            if (jsonStart >= 0 && jsonEnd > jsonStart) {
+                const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+                const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+                const edges = Array.isArray(parsed.edges) ? parsed.edges : [];
+                return {
+                    nodes: nodes.map((n: any, idx: number) => ({
+                        id: typeof n.id === 'string' ? n.id : `n-${idx}`,
+                        label: typeof n.label === 'string' ? n.label : (typeof n.id === 'string' ? n.id : `Node ${idx + 1}`),
+                    })),
+                    edges: edges.map((e: any, idx: number) => ({
+                        source: typeof e.source === 'string' ? e.source : 'title',
+                        target: typeof e.target === 'string' ? e.target : 'title',
+                        label: typeof e.label === 'string' ? e.label : undefined,
+                    })),
+                    plainText: text.trim(),
+                };
+            }
+            return {
+                nodes: [],
+                edges: [],
+                plainText: text.trim(),
+            };
+        } catch (error) {
+            console.error('Error generating knowledge graph:', error);
+            return {
+                nodes: [],
+                edges: [],
+                plainText: 'Could not generate graph.',
+            };
+        }
+    },
 };

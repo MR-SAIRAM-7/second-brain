@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { ObjectId } from 'mongodb';
+import multer from 'multer';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore pdf-parse has no types by default
+import pdfParse from 'pdf-parse';
 import { aiService } from '../services/ai.service';
 import { getKnowledgeCollection, toItem } from '../services/db.service';
 
@@ -35,10 +39,25 @@ const summarizeSchema = z.object({
     maxLength: z.coerce.number().int().min(50).max(800).optional(),
 });
 
+const mindMapSchema = z.object({
+    title: z.string().min(1),
+    content: z.string().min(20),
+});
+
+const graphSchema = z.object({
+    title: z.string().min(1),
+    content: z.string().min(20),
+});
+
 const withTimestamp = (payload: unknown) => ({
     success: true,
     data: payload,
     timestamp: new Date().toISOString(),
+});
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
 });
 
 const parseId = (id: string) => {
@@ -141,6 +160,75 @@ router.post('/items', async (req, res) => {
         res.json(withTimestamp(created));
     } catch (error) {
         console.error('Error creating item:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+});
+
+// Upload file and ingest as knowledge item
+router.post('/upload', upload.single('file'), async (req, res) => {
+    try {
+        const col = await getKnowledgeCollection();
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ success: false, error: 'File is required' });
+        }
+
+        const { originalname, mimetype, buffer, size } = file;
+        let content = '';
+
+        if (mimetype === 'text/plain' || mimetype === 'text/markdown' || mimetype === 'application/json') {
+            content = buffer.toString('utf-8');
+        } else if (mimetype === 'application/pdf') {
+            const parsed = await pdfParse(buffer);
+            content = parsed.text || '';
+        } else {
+            return res.status(400).json({ success: false, error: `Unsupported file type: ${mimetype}` });
+        }
+
+        if (!content.trim()) {
+            return res.status(400).json({ success: false, error: 'Could not extract content from file' });
+        }
+
+        const title = originalname.replace(/\.[^/.]+$/, '') || 'Uploaded note';
+
+        let summary = '';
+        if (content.length > 100) {
+            summary = await aiService.summarize(content);
+        }
+
+        let finalTags: string[] = await aiService.autoTag(content, title);
+        finalTags = finalTags.map((t) => t.toLowerCase());
+
+        const wordCount = content.split(/\s+/).length;
+        const now = new Date();
+        const doc = {
+            title,
+            content,
+            type: 'article',
+            tags: finalTags,
+            sourceUrl: undefined,
+            summary,
+            createdAt: now,
+            updatedAt: now,
+            userId: 'user1',
+            metadata: {
+                wordCount,
+                readingTime: Math.ceil(wordCount / 200),
+                aiGenerated: false,
+                sourceFile: {
+                    name: originalname,
+                    size,
+                    mimetype,
+                },
+            },
+        };
+
+        const result = await col.insertOne(doc);
+        const created = toItem({ ...doc, _id: result.insertedId });
+
+        res.json(withTimestamp(created));
+    } catch (error) {
+        console.error('Error uploading file:', error);
         res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
@@ -285,6 +373,40 @@ router.post('/summarize', async (req, res) => {
         res.json(withTimestamp({ summary }));
     } catch (error) {
         console.error('Error summarizing content:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+});
+
+// Mind map generation
+router.post('/mindmap', async (req, res) => {
+    try {
+        const parsed = mindMapSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({ success: false, error: parsed.error.flatten() });
+        }
+
+        const { title, content } = parsed.data;
+        const map = await aiService.mindMap(title, content);
+        res.json(withTimestamp({ map }));
+    } catch (error) {
+        console.error('Error generating mind map:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+});
+
+// Knowledge graph generation
+router.post('/graph', async (req, res) => {
+    try {
+        const parsed = graphSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({ success: false, error: parsed.error.flatten() });
+        }
+
+        const { title, content } = parsed.data;
+        const graph = await aiService.knowledgeGraph(title, content);
+        res.json(withTimestamp(graph));
+    } catch (error) {
+        console.error('Error generating knowledge graph:', error);
         res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });

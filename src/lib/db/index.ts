@@ -71,6 +71,23 @@ export const db = {
       const data = await res.json();
       return data.data || [];
     },
+
+    upload: async (file: File): Promise<KnowledgeItem> => {
+      const form = new FormData();
+      form.append('file', file);
+
+      const res = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        headers: API_KEY ? { Authorization: `Bearer ${API_KEY}` } : undefined,
+        body: form,
+      });
+      const data = await res.json();
+      return {
+        ...data.data,
+        createdAt: new Date(data.data.createdAt),
+        updatedAt: new Date(data.data.updatedAt),
+      };
+    },
   },
   user: {
     getCurrent: async (): Promise<User> => {

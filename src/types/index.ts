@@ -17,6 +17,11 @@ export interface KnowledgeItem {
     wordCount?: number;
     readingTime?: number;
     aiGenerated?: boolean;
+    sourceFile?: {
+      name: string;
+      size: number;
+      mimetype: string;
+    };
   };
 }
 
@@ -55,6 +60,14 @@ export interface CreateKnowledgeInput {
   type: KnowledgeType;
   tags?: string[];
   sourceUrl?: string;
+  attachments?: AttachmentMeta[];
+}
+
+export interface AttachmentMeta {
+  name: string;
+  size: number;
+  mimetype: string;
+  url?: string;
 }
 
 export interface UpdateKnowledgeInput {

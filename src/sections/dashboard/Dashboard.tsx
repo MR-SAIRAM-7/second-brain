@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { 
   Brain, 
   Search, 
@@ -18,12 +18,20 @@ import {
   MoreVertical,
   Trash2,
   Bot,
-  Command
+  Command,
+  ExternalLink,
+  File as FileIcon,
+  GitBranch,
+  Orbit
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/db';
 import { aiService } from '@/lib/ai';
 import type { KnowledgeItem, KnowledgeType, CreateKnowledgeInput } from '@/types';
+import type { GraphResult } from '@/types/ai';
+import ReactFlow, { Background, Controls, type Edge as FlowEdge, type Node as FlowNode } from 'reactflow';
+import cytoscape, { type Core as CyCore } from 'cytoscape';
+import 'reactflow/dist/style.css';
 import GlassCard from '@/components/animations/GlassCard';
 
 interface DashboardProps {
@@ -43,6 +51,8 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
   const [isAIChatOpen, setIsAIChatOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeItem, setActiveItem] = useState<KnowledgeItem | null>(null);
+  const [initialAction, setInitialAction] = useState<ViewerAction>(null);
 
   // Load data
   useEffect(() => {
@@ -133,6 +143,14 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
         )
       );
     }
+  };
+
+  const handleUploadItem = async (file: File) => {
+    const uploaded = await db.knowledge.upload(file);
+    setItems((prev) => [uploaded, ...prev]);
+    setFilteredItems((prev) => [uploaded, ...prev]);
+    setAllTags((prev) => Array.from(new Set([...prev, ...(uploaded.tags || [])])));
+    setIsCreateModalOpen(false);
   };
 
   const handleDeleteItem = async (id: string) => {
@@ -332,17 +350,38 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
                 item={item}
                 viewMode={viewMode}
                 onDelete={handleDeleteItem}
+                onOpen={(item, action) => {
+                  setActiveItem(item);
+                  setInitialAction(action ?? null);
+                }}
               />
             ))}
           </div>
         )}
       </div>
 
+      {activeItem && (
+        <ItemViewer
+          item={activeItem}
+          onClose={() => {
+            setActiveItem(null);
+            setInitialAction(null);
+          }}
+          onDelete={async (id) => {
+            await handleDeleteItem(id);
+            setActiveItem(null);
+            setInitialAction(null);
+          }}
+          initialAction={initialAction}
+        />
+      )}
+
       {/* Create Modal */}
       {isCreateModalOpen && (
         <CreateModal
           onClose={() => setIsCreateModalOpen(false)}
           onCreate={handleCreateItem}
+          onUpload={handleUploadItem}
           availableTags={allTags}
         />
       )}
@@ -382,10 +421,16 @@ interface KnowledgeCardProps {
   item: KnowledgeItem;
   viewMode: 'grid' | 'list';
   onDelete: (id: string) => void;
+  onOpen: (item: KnowledgeItem, action?: ViewerAction) => void;
 }
 
-function KnowledgeCard({ item, viewMode, onDelete }: KnowledgeCardProps) {
+type ViewerAction = 'mindmap' | 'graph' | null;
+
+function KnowledgeCard({ item, viewMode, onDelete, onOpen }: KnowledgeCardProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const isPdf = item.metadata?.sourceFile?.mimetype?.toLowerCase().includes('pdf');
+  const displayExcerpt = isPdf ? 'PDF document uploaded' : (item.summary || item.content.slice(0, viewMode === 'list' ? 100 : 150));
 
   const typeIcons: Record<KnowledgeType, typeof FileText> = {
     note: FileText,
@@ -405,10 +450,22 @@ function KnowledgeCard({ item, viewMode, onDelete }: KnowledgeCardProps) {
 
   const Icon = typeIcons[item.type];
   const colorClass = typeColors[item.type];
+  const triggerOpen = (action?: ViewerAction) => onOpen(item, action);
 
   if (viewMode === 'list') {
     return (
-      <GlassCard className="p-4">
+      <GlassCard
+        className="p-4 cursor-pointer"
+        onClick={() => triggerOpen()}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            triggerOpen();
+          }
+        }}
+      >
         <div className="flex items-center gap-4">
           <div className={cn('w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center', colorClass)}>
             <Icon className="w-5 h-5" />
@@ -416,7 +473,7 @@ function KnowledgeCard({ item, viewMode, onDelete }: KnowledgeCardProps) {
           <div className="flex-1 min-w-0">
             <h3 className="text-white font-medium truncate">{item.title}</h3>
             <p className="text-gray-500 text-sm truncate">
-              {item.summary || item.content.slice(0, 100)}...
+              {displayExcerpt}...
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -433,19 +490,57 @@ function KnowledgeCard({ item, viewMode, onDelete }: KnowledgeCardProps) {
             </span>
           </div>
         </div>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerOpen('mindmap');
+            }}
+            className="flex items-center gap-1 px-3 py-1 rounded-lg bg-white/5 text-xs text-gray-300 hover:bg-white/10"
+          >
+            <GitBranch className="w-3 h-3" />
+            Mind Map
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerOpen('graph');
+            }}
+            className="flex items-center gap-1 px-3 py-1 rounded-lg bg-white/5 text-xs text-gray-300 hover:bg-white/10"
+          >
+            <Orbit className="w-3 h-3" />
+            Graph
+          </button>
+        </div>
       </GlassCard>
     );
   }
 
   return (
-    <GlassCard className="p-6 group">
+    <GlassCard
+      className="p-6 group cursor-pointer"
+      onClick={() => triggerOpen()}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          triggerOpen();
+        }
+      }}
+    >
       <div className="flex items-start justify-between mb-4">
         <div className={cn('w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center', colorClass)}>
           <Icon className="w-5 h-5" />
         </div>
         <div className="relative">
           <button
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsMenuOpen(!isMenuOpen);
+            }}
             className="p-2 rounded-lg hover:bg-white/5 text-gray-500 hover:text-white transition-colors"
           >
             <MoreVertical className="w-4 h-4" />
@@ -454,11 +549,15 @@ function KnowledgeCard({ item, viewMode, onDelete }: KnowledgeCardProps) {
             <>
               <div
                 className="fixed inset-0 z-10"
-                onClick={() => setIsMenuOpen(false)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMenuOpen(false);
+                }}
               />
               <div className="absolute right-0 top-full mt-1 w-40 rounded-lg bg-[#1a1a1a] border border-white/10 shadow-xl z-20">
                 <button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onDelete(item.id);
                     setIsMenuOpen(false);
                   }}
@@ -475,7 +574,7 @@ function KnowledgeCard({ item, viewMode, onDelete }: KnowledgeCardProps) {
 
       <h3 className="text-white font-medium mb-2 line-clamp-2">{item.title}</h3>
       <p className="text-gray-500 text-sm mb-4 line-clamp-3">
-        {item.summary || item.content.slice(0, 150)}...
+        {displayExcerpt}...
       </p>
 
       {item.tags.length > 0 && (
@@ -502,24 +601,449 @@ function KnowledgeCard({ item, viewMode, onDelete }: KnowledgeCardProps) {
           <span>{item.metadata.readingTime} min read</span>
         )}
       </div>
+
+      <div className="mt-4 flex gap-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            triggerOpen('mindmap');
+          }}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-xs text-gray-300 hover:bg-white/10"
+        >
+          <GitBranch className="w-4 h-4" />
+          Mind Map
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            triggerOpen('graph');
+          }}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-xs text-gray-300 hover:bg-white/10"
+        >
+          <Orbit className="w-4 h-4" />
+          Graph
+        </button>
+      </div>
     </GlassCard>
   );
+}
+
+const formatBytes = (bytes?: number) => {
+  if (!bytes || Number.isNaN(bytes)) return '—';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const precision = unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(precision)} ${units[unitIndex]}`;
+};
+
+type MindMapFlow = { nodes: FlowNode[]; edges: FlowEdge[] };
+
+const parseMindMapToFlow = (mapText: string): MindMapFlow => {
+  const lines = mapText
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\t/g, '  '))
+    .filter((l) => l.trim().length > 0);
+
+  const stack: { depth: number; id: string }[] = [];
+  const nodes: FlowNode[] = [];
+  const edges: FlowEdge[] = [];
+
+  lines.forEach((line, idx) => {
+    const indent = (line.match(/^\s*/) || [''])[0].length;
+    const depth = Math.floor(indent / 2);
+    const label = line.replace(/^[-*•\s]+/, '').trim();
+    if (!label) return;
+
+    // Pop deeper levels
+    while (stack.length > 0 && stack[stack.length - 1].depth >= depth) {
+      stack.pop();
+    }
+
+    const id = `m-${idx}`;
+    const parent = stack[stack.length - 1]?.id;
+    const order = nodes.length;
+    nodes.push({
+      id,
+      data: { label },
+      position: { x: depth * 220, y: order * 110 },
+      style: { background: '#111827', border: '1px solid rgba(99,102,241,0.4)', color: '#e5e7eb' },
+    });
+
+    if (parent) {
+      edges.push({ id: `e-${parent}-${id}`, source: parent, target: id, animated: false });
+    }
+
+    stack.push({ depth, id });
+  });
+
+  return { nodes, edges };
+};
+
+interface ItemViewerProps {
+  item: KnowledgeItem;
+  onClose: () => void;
+  onDelete: (id: string) => void | Promise<void>;
+  initialAction?: ViewerAction;
+}
+
+function ItemViewer({ item, onClose, onDelete, initialAction }: ItemViewerProps) {
+  const typeIcons: Record<KnowledgeType, typeof FileText> = {
+    note: FileText,
+    article: BookOpen,
+    insight: Lightbulb,
+    link: Link2,
+    idea: Sparkles,
+  };
+
+  const typeColors: Record<KnowledgeType, string> = {
+    note: 'text-blue-400',
+    article: 'text-green-400',
+    insight: 'text-yellow-400',
+    link: 'text-purple-400',
+    idea: 'text-pink-400',
+  };
+
+  const Icon = typeIcons[item.type];
+  const colorClass = typeColors[item.type];
+  const fileMeta = item.metadata?.sourceFile;
+  const isPdf = fileMeta?.mimetype?.toLowerCase().includes('pdf');
+  const [mindMap, setMindMap] = useState<string | null>(null);
+  const [graph, setGraph] = useState<GraphResult | null>(null);
+  const [isGeneratingMindMap, setIsGeneratingMindMap] = useState(false);
+  const [isGeneratingGraph, setIsGeneratingGraph] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mindMapFlow = useMemo<MindMapFlow>(() => (mindMap ? parseMindMapToFlow(mindMap) : { nodes: [], edges: [] }), [mindMap]);
+
+
+  const generateMindMap = async () => {
+    setIsGeneratingMindMap(true);
+    setError(null);
+    try {
+      const result = await aiService.mindMap(item.title, item.content);
+      setMindMap(result.map);
+    } catch (e) {
+      setError('Failed to generate mind map.');
+    } finally {
+      setIsGeneratingMindMap(false);
+    }
+  };
+
+  const generateGraph = async () => {
+    setIsGeneratingGraph(true);
+    setError(null);
+    try {
+      const result = await aiService.knowledgeGraph(item.title, item.content);
+      setGraph(result);
+    } catch (e) {
+      setError('Failed to generate graph.');
+    } finally {
+      setIsGeneratingGraph(false);
+    }
+  };
+
+  useEffect(() => {
+    if (initialAction === 'mindmap') {
+      void generateMindMap();
+    }
+    if (initialAction === 'graph') {
+      void generateGraph();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAction]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl bg-[#0b0b0b] border border-white/10">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-6 border-b border-white/5">
+          <div className="flex items-center gap-3">
+            <div className={cn('w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center', colorClass)}>
+              <Icon className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-white leading-tight">{item.title}</h2>
+              <p className="text-xs text-gray-500 mt-1">
+                {item.type.toUpperCase()} • {item.createdAt.toLocaleString()}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {item.sourceUrl && (
+              <a
+                href={item.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-xs text-indigo-300 border border-white/10 hover:bg-white/10"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Open source
+              </a>
+            )}
+            <button
+              onClick={generateMindMap}
+              disabled={isGeneratingMindMap}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-xs text-gray-200 border border-white/10 hover:bg-white/10 disabled:opacity-50"
+            >
+              <GitBranch className="w-4 h-4" />
+              {isGeneratingMindMap ? 'Building…' : 'Mind Map'}
+            </button>
+            <button
+              onClick={generateGraph}
+              disabled={isGeneratingGraph}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-xs text-gray-200 border border-white/10 hover:bg-white/10 disabled:opacity-50"
+            >
+              <Orbit className="w-4 h-4" />
+              {isGeneratingGraph ? 'Linking…' : 'Graph'}
+            </button>
+            <button
+              onClick={() => onDelete(item.id)}
+              className="px-3 py-2 rounded-lg bg-white/5 text-xs text-red-300 border border-white/10 hover:bg-white/10"
+            >
+              Delete
+            </button>
+            <button
+              onClick={onClose}
+              className="px-3 py-2 rounded-lg bg-indigo-600 text-xs text-white hover:bg-indigo-500"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4 overflow-auto max-h-[calc(90vh-96px)]">
+          {!isPdf && item.summary && (
+            <div className="rounded-xl bg-indigo-500/5 border border-indigo-500/20 p-4">
+              <p className="text-xs text-indigo-300 mb-2">AI summary</p>
+              <p className="text-sm text-gray-100 leading-relaxed whitespace-pre-wrap">{item.summary}</p>
+            </div>
+          )}
+
+          {fileMeta && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0">
+                <FileIcon className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div className="text-sm">
+                <p className="text-white font-medium">{fileMeta.name}</p>
+                <p className="text-xs text-gray-500 mb-1">{fileMeta.mimetype} • {formatBytes(fileMeta.size)}</p>
+                <p className="text-xs text-gray-500">Content below was extracted from the uploaded file.</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <span className={cn('px-3 py-1 rounded-full text-xs border border-white/10', colorClass)}>
+              {item.type}
+            </span>
+            {item.tags.map((tag) => (
+              <span
+                key={tag}
+                className="px-3 py-1 rounded-full text-xs bg-white/5 text-gray-300 border border-white/10"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          {isPdf ? (
+            <div className="rounded-xl bg-white/[0.02] border border-white/10 p-4">
+              <p className="text-xs text-gray-500 mb-2">PDF file</p>
+              <p className="text-sm text-gray-300">
+                This item comes from a PDF. Original text is hidden; download or view the PDF to read it.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-white/[0.02] border border-white/10 p-4">
+              <p className="text-xs text-gray-500 mb-2">Content</p>
+              <div className="text-gray-100 text-sm whitespace-pre-wrap leading-relaxed">
+                {item.content}
+              </div>
+            </div>
+          )}
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="rounded-xl bg-white/[0.02] border border-white/10 p-4">
+              <div className="flex items-center gap-2 mb-2 text-sm text-gray-300">
+                <GitBranch className="w-4 h-4" />
+                Mind map
+              </div>
+              {mindMap ? (
+                <div className="h-72 rounded-lg bg-black/30 border border-white/5">
+                  <ReactFlow
+                    nodes={mindMapFlow.nodes}
+                    edges={mindMapFlow.edges}
+                    fitView
+                    proOptions={{ hideAttribution: true }}
+                    nodesDraggable={false}
+                    elementsSelectable={false}
+                    zoomOnScroll
+                    panOnScroll
+                    panOnDrag
+                    style={{ height: '100%' }}
+                  >
+                    <Background gap={12} color="rgba(255,255,255,0.05)" />
+                    <Controls showInteractive={false} />
+                  </ReactFlow>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500">Generate a quick mind map from this note.</p>
+              )}
+            </div>
+            <div className="rounded-xl bg-white/[0.02] border border-white/10 p-4">
+              <div className="flex items-center gap-2 mb-2 text-sm text-gray-300">
+                <Orbit className="w-4 h-4" />
+                Knowledge graph
+              </div>
+              {graph ? (
+                <CytoscapeView graph={graph} title={item.title} />
+              ) : (
+                <p className="text-xs text-gray-500">Generate a lightweight connection graph.</p>
+              )}
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-red-500/20 bg-red-500/5 text-red-200 text-xs px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          <div className="grid sm:grid-cols-3 gap-3 text-sm text-gray-400">
+            <div className="rounded-lg bg-white/[0.02] border border-white/10 p-3">
+              <p className="text-xs text-gray-500">Created</p>
+              <p className="text-white">{item.createdAt.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-white/[0.02] border border-white/10 p-3">
+              <p className="text-xs text-gray-500">Updated</p>
+              <p className="text-white">{item.updatedAt.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-white/[0.02] border border-white/10 p-3">
+              <p className="text-xs text-gray-500">Reading time</p>
+              <p className="text-white">{item.metadata?.readingTime ? `${item.metadata.readingTime} min` : '—'}</p>
+              {item.metadata?.wordCount && (
+                <p className="text-xs text-gray-500">{item.metadata.wordCount} words</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface CytoscapeViewProps {
+  graph: GraphResult;
+  title: string;
+}
+
+function CytoscapeView({ graph, title }: CytoscapeViewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const elements = useMemo(() => {
+    const nodeIds = new Set(graph.nodes.map((n) => n.id));
+    const nodes = [...graph.nodes];
+    graph.edges.forEach((e) => {
+      if (!nodeIds.has(e.source)) {
+        nodes.push({ id: e.source, label: e.source });
+        nodeIds.add(e.source);
+      }
+      if (!nodeIds.has(e.target)) {
+        nodes.push({ id: e.target, label: e.target });
+        nodeIds.add(e.target);
+      }
+    });
+
+    if (!nodeIds.size) {
+      nodes.push({ id: 'title', label: title });
+    }
+
+    const cyNodes = nodes.map((n) => ({ data: { id: n.id, label: n.label } }));
+    const cyEdges = graph.edges.map((e, idx) => ({
+      data: {
+        id: `e-${idx}`,
+        source: e.source,
+        target: e.target,
+        label: e.label,
+      },
+    }));
+
+    return [...cyNodes, ...cyEdges];
+  }, [graph.edges, graph.nodes, title]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const cy: CyCore = cytoscape({
+      container: containerRef.current,
+      elements,
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': '#6366f1',
+            color: '#e5e7eb',
+            label: 'data(label)',
+            'font-size': '10px',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'text-wrap': 'wrap',
+            'text-max-width': '120px',
+          },
+        },
+        {
+          selector: 'edge',
+          style: {
+            'line-color': '#8b5cf6',
+            'target-arrow-color': '#8b5cf6',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier',
+            width: 1.5,
+            'font-size': '9px',
+            label: 'data(label)',
+            'text-background-color': '#0a0a0a',
+            'text-background-opacity': 0.7,
+            'text-background-padding': '2px',
+          },
+        },
+      ],
+      layout: { name: 'cose', animate: false, fit: true, nodeRepulsion: 8000 },
+      wheelSensitivity: 0.2,
+    });
+
+    cy.resize();
+    cy.fit();
+
+    return () => {
+      cy.destroy();
+    };
+  }, [elements]);
+
+  return <div ref={containerRef} className="h-72 w-full rounded-lg bg-black/30 border border-white/10" />;
 }
 
 // Create Modal Component
 interface CreateModalProps {
   onClose: () => void;
   onCreate: (input: CreateKnowledgeInput) => void;
+  onUpload: (file: File) => void;
   availableTags: string[];
 }
 
-function CreateModal({ onClose, onCreate, availableTags }: CreateModalProps) {
+function CreateModal({ onClose, onCreate, onUpload, availableTags }: CreateModalProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [type, setType] = useState<KnowledgeType>('note');
   const [tags, setTags] = useState<string[]>([]);
   const [sourceUrl, setSourceUrl] = useState('');
   const [isGeneratingTags, setIsGeneratingTags] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -544,6 +1068,21 @@ function CreateModal({ onClose, onCreate, availableTags }: CreateModalProps) {
     setTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile || isUploading) return;
+    setIsUploading(true);
+    await onUpload(selectedFile);
+    setIsUploading(false);
+    setSelectedFile(null);
   };
 
   return (
@@ -604,6 +1143,38 @@ function CreateModal({ onClose, onCreate, availableTags }: CreateModalProps) {
               className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500/50 transition-colors resize-none"
               required
             />
+          </div>
+
+          {/* File upload */}
+          <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-white font-medium">Upload a document</p>
+                <p className="text-xs text-gray-500">TXT, MD, or PDF up to 10MB. We ingest and auto-tag it.</p>
+                {selectedFile && (
+                  <p className="mt-2 text-xs text-indigo-300">Selected: {selectedFile.name}</p>
+                )}
+              </div>
+              <label className="px-3 py-2 rounded-lg bg-white/5 text-sm text-gray-200 border border-white/10 cursor-pointer hover:bg-white/10">
+                Choose file
+                <input
+                  type="file"
+                  accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <button
+                type="button"
+                onClick={handleUpload}
+                disabled={!selectedFile || isUploading}
+                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isUploading ? 'Uploading…' : 'Upload & Ingest'}
+              </button>
+            </div>
           </div>
 
           {/* Source URL */}
