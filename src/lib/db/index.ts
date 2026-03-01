@@ -1,11 +1,17 @@
 import type { KnowledgeItem, KnowledgeType, CreateKnowledgeInput, UpdateKnowledgeInput, User } from '@/types';
 
 const API_BASE = '/api/public/brain';
+const API_KEY = import.meta.env.VITE_API_KEY || 'dev-key';
+
+const headers = () => ({
+  'Content-Type': 'application/json',
+  ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+});
 
 export const db = {
   knowledge: {
     getAll: async (): Promise<KnowledgeItem[]> => {
-      const res = await fetch(`${API_BASE}/items`);
+      const res = await fetch(`${API_BASE}/items`, { headers: headers() });
       const data = await res.json();
       return (data.data?.items || []).map((item: any) => ({
         ...item,
@@ -21,8 +27,8 @@ export const db = {
     create: async (input: CreateKnowledgeInput): Promise<KnowledgeItem> => {
       const res = await fetch(`${API_BASE}/items`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input)
+        headers: headers(),
+        body: JSON.stringify(input),
       });
       const data = await res.json();
       return {
@@ -32,12 +38,23 @@ export const db = {
       };
     },
 
-    update: async (_id: string, _input: UpdateKnowledgeInput): Promise<KnowledgeItem | null> => {
-      return null;
+    update: async (id: string, input: UpdateKnowledgeInput): Promise<KnowledgeItem | null> => {
+      const res = await fetch(`${API_BASE}/items/${id}`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return {
+        ...data.data,
+        createdAt: new Date(data.data.createdAt),
+        updatedAt: new Date(data.data.updatedAt),
+      };
     },
 
     delete: async (id: string): Promise<boolean> => {
-      await fetch(`${API_BASE}/items/${id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE}/items/${id}`, { method: 'DELETE', headers: headers() });
       return true;
     },
 
@@ -50,7 +67,7 @@ export const db = {
     },
 
     getAllTags: async (): Promise<string[]> => {
-      const res = await fetch(`${API_BASE}/tags`);
+      const res = await fetch(`${API_BASE}/tags`, { headers: headers() });
       const data = await res.json();
       return data.data || [];
     },
@@ -61,10 +78,10 @@ export const db = {
         id: 'user1',
         email: 'user@example.com',
         name: 'User',
-        preferences: { theme: 'dark', autoSummarize: true, defaultTags: [] }
+        preferences: { theme: 'dark', autoSummarize: true, defaultTags: [] },
       };
-    }
-  }
+    },
+  },
 };
 
 export default db;

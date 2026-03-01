@@ -2,13 +2,7 @@ import { useRef, useMemo, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
-// Neural Fog Shader
 const NeuralFogShader = {
-  uniforms: {
-    uTime: { value: 0 },
-    uMouse: { value: new THREE.Vector2(0.5, 0.5) },
-    uResolution: { value: new THREE.Vector2(1, 1) },
-  },
   vertexShader: `
     varying vec2 vUv;
     void main() {
@@ -22,7 +16,6 @@ const NeuralFogShader = {
     uniform vec2 uResolution;
     varying vec2 vUv;
 
-    // Simplex noise function
     vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
     vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
     vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
@@ -93,29 +86,32 @@ const NeuralFogShader = {
       
       // Mouse influence
       vec2 mouseInfluence = (uMouse - 0.5) * 0.3;
-      uv += mouseInfluence * 0.1;
+      uv += mouseInfluence * 0.08;
 
-      // Create flowing noise
-      float noise1 = snoise(vec3(uv * 2.0, uTime * 0.1));
-      float noise2 = snoise(vec3(uv * 4.0 + 100.0, uTime * 0.15));
-      float noise3 = snoise(vec3(uv * 1.0 + 200.0, uTime * 0.08));
+      // Layered noise
+      float noise1 = snoise(vec3(uv * 1.8, uTime * 0.08));
+      float noise2 = snoise(vec3(uv * 3.5 + 100.0, uTime * 0.12));
+      float noise3 = snoise(vec3(uv * 0.8 + 200.0, uTime * 0.06));
       
       float combinedNoise = noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2;
       
-      // Colors
-      vec3 black = vec3(0.0, 0.0, 0.0);
-      vec3 darkGray = vec3(0.063, 0.063, 0.063);
-      vec3 indigo = vec3(0.31, 0.275, 0.898);
+      // Color palette — deeper indigo/violet
+      vec3 black = vec3(0.0);
+      vec3 darkBase = vec3(0.02, 0.01, 0.04);
+      vec3 indigo = vec3(0.24, 0.22, 0.85);
+      vec3 violet = vec3(0.44, 0.18, 0.73);
       
-      // Mix colors based on noise
-      vec3 color = mix(black, darkGray, combinedNoise * 0.5 + 0.5);
+      // Mix colors
+      vec3 color = mix(black, darkBase, combinedNoise * 0.5 + 0.5);
       
-      // Add indigo pulses
-      float pulse = sin(uTime * 0.5 + combinedNoise * 3.0) * 0.5 + 0.5;
-      color = mix(color, indigo, pulse * 0.08 * (combinedNoise + 0.5));
+      // Add subtle indigo wisps
+      float pulse1 = sin(uTime * 0.4 + combinedNoise * 3.0) * 0.5 + 0.5;
+      float pulse2 = sin(uTime * 0.3 + noise2 * 2.5 + 1.5) * 0.5 + 0.5;
+      color = mix(color, indigo, pulse1 * 0.06 * (combinedNoise + 0.5));
+      color = mix(color, violet, pulse2 * 0.04 * (noise3 + 0.5));
       
       // Vignette
-      float vignette = 1.0 - length(vUv - 0.5) * 0.8;
+      float vignette = 1.0 - length(vUv - 0.5) * 0.9;
       color *= vignette;
 
       gl_FragColor = vec4(color, 1.0);
@@ -151,14 +147,11 @@ function NeuralFogPlane() {
     if (meshRef.current) {
       const material = meshRef.current.material as THREE.ShaderMaterial;
       material.uniforms.uTime.value = state.clock.elapsedTime;
-
-      // Smooth mouse follow
-      material.uniforms.uMouse.value.x += (mouseRef.current.x - material.uniforms.uMouse.value.x) * 0.05;
-      material.uniforms.uMouse.value.y += (mouseRef.current.y - material.uniforms.uMouse.value.y) * 0.05;
+      material.uniforms.uMouse.value.x += (mouseRef.current.x - material.uniforms.uMouse.value.x) * 0.04;
+      material.uniforms.uMouse.value.y += (mouseRef.current.y - material.uniforms.uMouse.value.y) * 0.04;
     }
   });
 
-  // Handle mouse move
   const handlePointerMove = (e: { uv?: { x: number; y: number } }) => {
     mouseRef.current = {
       x: e.uv?.x ?? 0.5,
@@ -179,8 +172,8 @@ export default function NeuralBackground() {
     <div className="fixed inset-0 -z-10">
       <Canvas
         camera={{ position: [0, 0, 1], fov: 75 }}
-        gl={{ antialias: true, alpha: false }}
-        dpr={Math.min(window.devicePixelRatio, 2)}
+        gl={{ antialias: false, alpha: false }}
+        dpr={Math.min(window.devicePixelRatio, 1.5)}
       >
         <NeuralFogPlane />
       </Canvas>

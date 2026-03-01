@@ -94,21 +94,37 @@ const apiEndpoints = [
   {
     method: 'GET',
     path: '/api/public/brain/query',
-    description: 'Query the knowledge base with natural language',
+    description: 'Natural language query with optional limit',
     params: [
-      { name: 'q', type: 'string', required: true, description: 'Natural language query' },
-      { name: 'limit', type: 'number', required: false, description: 'Max results (default: 5)' },
+      { name: 'q', type: 'string', required: true, description: 'Query string' },
+      { name: 'limit', type: 'number', required: false, description: 'Max results (default: 5, max: 20)' },
     ],
     response: `{
   "success": true,
   "data": {
     "answer": "Based on your notes...",
-    "sources": [
-      { "id": "1", "title": "Note Title", "relevance": 0.95 }
-    ],
+    "sources": [{ "id": "1", "title": "Note Title" }],
     "confidence": 0.87
   },
-  "timestamp": "2024-01-15T10:30:00Z"
+  "timestamp": "2026-03-01T10:30:00Z"
+}`,
+  },
+  {
+    method: 'POST',
+    path: '/api/public/brain/query',
+    description: 'Same as GET but accepts JSON body',
+    params: [
+      { name: 'q', type: 'string', required: true, description: 'Query string' },
+      { name: 'limit', type: 'number', required: false, description: 'Max results (default: 5, max: 20)' },
+    ],
+    response: `{
+  "success": true,
+  "data": {
+    "answer": "...",
+    "sources": [{ "id": "1", "title": "Note Title" }],
+    "confidence": 0.82
+  },
+  "timestamp": "2026-03-01T10:30:00Z"
 }`,
   },
   {
@@ -116,36 +132,73 @@ const apiEndpoints = [
     path: '/api/public/brain/items',
     description: 'List knowledge items with optional filtering',
     params: [
-      { name: 'type', type: 'string', required: false, description: 'Filter by type (note, article, insight)' },
+      { name: 'type', type: 'string', required: false, description: 'Filter by type (note, article, insight, link, idea)' },
       { name: 'tag', type: 'string', required: false, description: 'Filter by tag' },
       { name: 'search', type: 'string', required: false, description: 'Search query' },
     ],
     response: `{
   "success": true,
   "data": {
-    "items": [
-      { "id": "1", "title": "...", "type": "note", "tags": [...] }
-    ],
+    "items": [{ "id": "1", "title": "...", "type": "note", "tags": ["ai"] }],
     "total": 42
   },
-  "timestamp": "2024-01-15T10:30:00Z"
+  "timestamp": "2026-03-01T10:30:00Z"
+}`,
+  },
+  {
+    method: 'POST',
+    path: '/api/public/brain/items',
+    description: 'Create a knowledge item (auto-summary + auto-tag server-side)',
+    params: [
+      { name: 'title', type: 'string', required: true, description: 'Title of the item' },
+      { name: 'content', type: 'string', required: true, description: 'Rich content or note body' },
+      { name: 'type', type: 'string', required: false, description: 'note | article | insight | link | idea' },
+      { name: 'tags', type: 'string[]', required: false, description: 'Optional tags; if omitted auto-tagging runs' },
+      { name: 'sourceUrl', type: 'string', required: false, description: 'Optional source URL' },
+    ],
+    response: `{
+  "success": true,
+  "data": { "id": "cuid", "title": "...", "summary": "..." },
+  "timestamp": "2026-03-01T10:30:00Z"
+}`,
+  },
+  {
+    method: 'PUT',
+    path: '/api/public/brain/items/:id',
+    description: 'Update metadata, tags, or summary for an item',
+    params: [
+      { name: 'summary', type: 'string', required: false, description: 'Store AI-generated summary' },
+      { name: 'tags', type: 'string[]', required: false, description: 'Replace tags' },
+    ],
+    response: `{
+  "success": true,
+  "data": { "id": "cuid", "summary": "..." },
+  "timestamp": "2026-03-01T10:30:00Z"
+}`,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/public/brain/items/:id',
+    description: 'Remove a knowledge item',
+    params: [],
+    response: `{
+  "success": true,
+  "data": { "deleted": true },
+  "timestamp": "2026-03-01T10:30:00Z"
 }`,
   },
   {
     method: 'POST',
     path: '/api/public/brain/summarize',
-    description: 'Generate a summary of provided content',
+    description: 'Generate a concise summary of provided content',
     params: [
       { name: 'content', type: 'string', required: true, description: 'Content to summarize' },
-      { name: 'maxLength', type: 'number', required: false, description: 'Maximum summary length' },
+      { name: 'maxLength', type: 'number', required: false, description: 'Max characters to consider (50-800)' },
     ],
     response: `{
   "success": true,
-  "data": {
-    "summary": "Concise summary of the content...",
-    "keyPoints": ["Point 1", "Point 2"]
-  },
-  "timestamp": "2024-01-15T10:30:00Z"
+  "data": { "summary": "Concise summary of the content..." },
+  "timestamp": "2026-03-01T10:30:00Z"
 }`,
   },
 ];

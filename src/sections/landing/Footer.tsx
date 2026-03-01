@@ -1,42 +1,71 @@
 import { Brain, Github, Twitter, Linkedin, Mail } from 'lucide-react';
 
-const footerLinks = {
-  Product: ['Features', 'Pricing', 'Integrations', 'Changelog', 'Roadmap'],
-  Resources: ['Documentation', 'API Reference', 'Guides', 'Blog', 'Community'],
-  Company: ['About', 'Careers', 'Press', 'Partners', 'Contact'],
-  Legal: ['Privacy', 'Terms', 'Security', 'Cookies'],
-};
+const footerLinks = [
+  {
+    title: 'Product',
+    links: [
+      { label: 'Features', href: '#features' },
+      { label: 'How It Works', href: '#how-it-works' },
+      { label: 'Pricing', href: '#' },
+      { label: 'Changelog', href: '#' },
+    ],
+  },
+  {
+    title: 'Resources',
+    links: [
+      { label: 'Documentation', href: '#' },
+      { label: 'API Reference', href: '#' },
+      { label: 'Blog', href: '#' },
+      { label: 'Community', href: '#' },
+    ],
+  },
+  {
+    title: 'Company',
+    links: [
+      { label: 'About', href: '#' },
+      { label: 'Careers', href: '#' },
+      { label: 'Privacy', href: '#' },
+      { label: 'Terms', href: '#' },
+    ],
+  },
+];
+
+const socialLinks = [
+  { icon: Github, href: '#', label: 'GitHub' },
+  { icon: Twitter, href: '#', label: 'Twitter' },
+  { icon: Linkedin, href: '#', label: 'LinkedIn' },
+  { icon: Mail, href: '#', label: 'Email' },
+];
 
 export default function Footer() {
   return (
-    <footer className="border-t border-white/5 bg-black/50 backdrop-blur-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-8">
+    <footer className="relative pt-16 pb-8 border-t border-white/[0.06]">
+      {/* Gradient divider */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent" />
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
           {/* Brand */}
-          <div className="col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center">
+          <div className="col-span-2 md:col-span-2">
+            <a href="#" className="flex items-center gap-2.5 mb-4">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
                 <Brain className="w-5 h-5 text-white" />
               </div>
-              <span className="text-lg font-semibold text-white">Second Brain</span>
-            </div>
-            <p className="text-gray-500 text-sm mb-6 max-w-xs">
-              Capture, organize, and rediscover your knowledge with AI-powered intelligence.
+              <span className="text-lg font-semibold text-white tracking-tight">Second Brain</span>
+            </a>
+            <p className="text-gray-500 text-sm leading-relaxed max-w-xs mb-6">
+              AI-powered knowledge management that helps you capture, organize, and rediscover your ideas.
             </p>
-            {/* Social links */}
+            {/* Social */}
             <div className="flex gap-3">
-              {[
-                { icon: Twitter, href: '#' },
-                { icon: Github, href: '#' },
-                { icon: Linkedin, href: '#' },
-                { icon: Mail, href: '#' },
-              ].map((social, index) => {
+              {socialLinks.map((social) => {
                 const Icon = social.icon;
                 return (
                   <a
-                    key={index}
+                    key={social.label}
                     href={social.href}
-                    className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:bg-white/10 hover:text-white transition-colors"
+                    aria-label={social.label}
+                    className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/[0.08] hover:border-white/[0.12] transition-all"
                   >
                     <Icon className="w-4 h-4" />
                   </a>
@@ -45,18 +74,18 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Links */}
-          {Object.entries(footerLinks).map(([category, links]) => (
-            <div key={category}>
-              <h4 className="text-white font-medium mb-4">{category}</h4>
-              <ul className="space-y-3">
-                {links.map((link) => (
-                  <li key={link}>
+          {/* Link columns */}
+          {footerLinks.map((group) => (
+            <div key={group.title}>
+              <h3 className="text-white font-semibold text-sm mb-4">{group.title}</h3>
+              <ul className="space-y-2.5">
+                {group.links.map((link) => (
+                  <li key={link.label}>
                     <a
-                      href="#"
+                      href={link.href}
                       className="text-gray-500 text-sm hover:text-white transition-colors"
                     >
-                      {link}
+                      {link.label}
                     </a>
                   </li>
                 ))}
@@ -66,21 +95,13 @@ export default function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-16 pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-gray-600 text-sm">
             © {new Date().getFullYear()} Second Brain. All rights reserved.
           </p>
-          <div className="flex items-center gap-6">
-            <a href="#" className="text-gray-600 text-sm hover:text-gray-400 transition-colors">
-              Privacy Policy
-            </a>
-            <a href="#" className="text-gray-600 text-sm hover:text-gray-400 transition-colors">
-              Terms of Service
-            </a>
-            <a href="#" className="text-gray-600 text-sm hover:text-gray-400 transition-colors">
-              Cookie Settings
-            </a>
-          </div>
+          <p className="text-gray-600 text-xs">
+            Built with React, GSAP, Three.js & AI
+          </p>
         </div>
       </div>
     </footer>

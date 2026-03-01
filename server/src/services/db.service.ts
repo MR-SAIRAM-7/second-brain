@@ -1,15 +1,52 @@
-import { PrismaClient } from '@prisma/client';
+import { Db, MongoClient, Collection, ObjectId } from 'mongodb';
 
-// PrismaClient is attached to the `global` object in development to prevent 
-// exhausting your database connection limit.
-// Learn more: https://pris.ly/d/help/next-js-best-practices
+type KnowledgeDoc = {
+    _id?: ObjectId;
+    title: string;
+    content: string;
+    type: string;
+    sourceUrl?: string;
+    tags: string[];
+    summary?: string;
+    createdAt: Date;
+    updatedAt: Date;
+    userId: string;
+    metadata?: Record<string, unknown>;
+};
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
+let client: MongoClient | null = null;
+let db: Db | null = null;
 
-export const prisma =
-    globalForPrisma.prisma ||
-    new PrismaClient({
-        log: ['query', 'info', 'warn', 'error'],
-    });
+const getMongoUri = () => {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) throw new Error('MONGODB_URI is not configured');
+    return uri;
+};
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+export async function getDb(): Promise<Db> {
+    if (db) return db;
+    const uri = getMongoUri();
+    client = new MongoClient(uri);
+    await client.connect();
+    db = client.db();
+    return db;
+}
+
+export async function getKnowledgeCollection(): Promise<Collection<KnowledgeDoc>> {
+    const database = await getDb();
+    return database.collection<KnowledgeDoc>('knowledge_items');
+}
+
+export const toItem = (doc: KnowledgeDoc) => ({
+    id: doc._id?.toString() || '',
+    title: doc.title,
+    content: doc.content,
+    type: doc.type,
+    sourceUrl: doc.sourceUrl,
+    tags: doc.tags,
+    summary: doc.summary,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    userId: doc.userId,
+    metadata: doc.metadata,
+});

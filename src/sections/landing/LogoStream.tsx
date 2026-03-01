@@ -1,100 +1,49 @@
-import { useRef, useEffect } from 'react';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-
-gsap.registerPlugin(ScrollTrigger);
+import { Brain, Sparkles, Shield, Zap, Globe, Code2, Database } from 'lucide-react';
 
 const logos = [
-  { name: 'Notion', icon: 'N' },
-  { name: 'Obsidian', icon: 'O' },
-  { name: 'Evernote', icon: 'E' },
-  { name: 'Roam Research', icon: 'R' },
-  { name: 'Logseq', icon: 'L' },
-  { name: 'Craft', icon: 'C' },
-  { name: 'Mem.ai', icon: 'M' },
-  { name: 'Reflect', icon: 'Rf' },
+  { name: 'OpenAI', icon: Sparkles },
+  { name: 'Google', icon: Brain },
+  { name: 'Vercel', icon: Zap },
+  { name: 'Supabase', icon: Database },
+  { name: 'Cloudflare', icon: Shield },
+  { name: 'Next.js', icon: Globe },
+  { name: 'TypeScript', icon: Code2 },
+  { name: 'React', icon: Sparkles },
 ];
 
 export default function LogoStream() {
-  const sectionRef = useRef<HTMLElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const speedRef = useRef(1);
-
-  useEffect(() => {
-    if (!sectionRef.current || !trackRef.current) return;
-
-    const ctx = gsap.context(() => {
-      // Continuous scroll animation
-      const track = trackRef.current;
-      if (!track) return;
-
-      const trackWidth = track.scrollWidth / 2;
-      
-      gsap.to(track, {
-        x: -trackWidth,
-        duration: 30,
-        ease: 'none',
-        repeat: -1,
-        modifiers: {
-          x: gsap.utils.unitize((x) => parseFloat(x) % trackWidth),
-        },
-      });
-
-      // Scroll-based speed control
-      ScrollTrigger.create({
-        trigger: sectionRef.current,
-        start: 'top bottom',
-        end: 'bottom top',
-        onUpdate: (self) => {
-          const velocity = self.getVelocity();
-          speedRef.current = 1 + Math.abs(velocity) / 1000;
-          
-          gsap.to(track, {
-            timeScale: speedRef.current,
-            duration: 0.3,
-          });
-        },
-      });
-    }, sectionRef);
-
-    return () => ctx.revert();
-  }, []);
-
-  // Duplicate logos for infinite scroll
-  const allLogos = [...logos, ...logos, ...logos, ...logos];
+  // Double the logos for seamless infinite scroll
+  const doubled = [...logos, ...logos];
 
   return (
-    <section
-      ref={sectionRef}
-      className="py-16 overflow-hidden border-y border-white/5"
-    >
-      <p className="text-center text-sm text-gray-500 mb-8 uppercase tracking-wider">
-        Trusted by thinkers and creators
+    <section className="py-16 relative overflow-hidden">
+      {/* Section label */}
+      <p className="text-center text-sm text-gray-500 mb-8 uppercase tracking-widest font-medium">
+        Built with industry-leading technology
       </p>
 
-      <div className="relative">
-        {/* Fade edges */}
-        <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-black to-transparent z-10 pointer-events-none" />
-        <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-black to-transparent z-10 pointer-events-none" />
-
-        {/* Logo track */}
-        <div
-          ref={trackRef}
-          className="flex gap-16 items-center whitespace-nowrap"
-        >
-          {allLogos.map((logo, index) => (
-            <div
-              key={index}
-              className="flex items-center gap-3 text-gray-500 hover:text-gray-300 transition-colors cursor-default group"
-            >
-              <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-lg font-bold group-hover:bg-white/10 transition-colors">
-                {logo.icon}
+      {/* Marquee container */}
+      <div className="relative mask-edges">
+        <div className="flex gap-12 animate-marquee">
+          {doubled.map((logo, i) => {
+            const Icon = logo.icon;
+            return (
+              <div
+                key={i}
+                className="flex items-center gap-3 px-6 py-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex-shrink-0 hover:bg-white/[0.05] hover:border-white/[0.12] transition-all duration-300 group cursor-default"
+              >
+                <Icon className="w-5 h-5 text-gray-500 group-hover:text-indigo-400 transition-colors" />
+                <span className="text-gray-400 font-medium text-sm whitespace-nowrap group-hover:text-white transition-colors">
+                  {logo.name}
+                </span>
               </div>
-              <span className="text-lg font-medium">{logo.name}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
+
+      {/* Subtle divider */}
+      <div className="mt-16 max-w-4xl mx-auto h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
     </section>
   );
 }

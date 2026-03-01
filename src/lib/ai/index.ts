@@ -1,25 +1,34 @@
 import type { KnowledgeItem, AIQueryResult, KnowledgeType } from '@/types';
 
 const API_BASE = '/api/public/brain';
+const API_KEY = import.meta.env.VITE_API_KEY || 'dev-key';
+
+const headers = () => ({
+  'Content-Type': 'application/json',
+  ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
+});
 
 export const aiService = {
   summarize: async (content: string): Promise<string> => {
-    // Handled by backend on item creation
-    return content;
+    const res = await fetch(`${API_BASE}/summarize`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ content, maxLength: 400 }),
+    });
+    if (!res.ok) return content;
+    const data = await res.json();
+    return data.data?.summary || content;
   },
 
   autoTag: async (_content: string, _title: string): Promise<string[]> => {
-    // Now handled by backend on creation, but if frontend needs it separately:
-    // (In Dashboard.tsx it calls this directly before submit)
-    // For now we return empty so it relies on backend fallback
     return [];
   },
 
   query: async (question: string, _knowledgeBase: KnowledgeItem[]): Promise<AIQueryResult> => {
     const res = await fetch(`${API_BASE}/query`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: question, limit: 5 })
+      headers: headers(),
+      body: JSON.stringify({ q: question, limit: 5 }),
     });
     const data = await res.json();
     return {
@@ -27,7 +36,7 @@ export const aiService = {
       sources: data.data.sources.map((item: any) => ({
         ...item,
         createdAt: new Date(item.createdAt),
-        updatedAt: new Date(item.updatedAt)
+        updatedAt: new Date(item.updatedAt),
       })),
       confidence: data.data.confidence,
     };

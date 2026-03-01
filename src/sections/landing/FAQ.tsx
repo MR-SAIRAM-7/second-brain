@@ -1,137 +1,133 @@
 import { useRef, useEffect, useState } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { Plus } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ChevronDown } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger);
 
 const faqs = [
   {
-    question: 'What is a Second Brain?',
-    answer: 'A Second Brain is a digital system for capturing, organizing, and retrieving your knowledge. It\'s inspired by Tiago Forte\'s Building a Second Brain methodology, which helps you offload information from your biological brain into a trusted external system, freeing up mental space for creative thinking.',
+    question: 'What is Second Brain?',
+    answer: 'Second Brain is an AI-powered knowledge management platform that helps you capture, organize, and intelligently surface knowledge. It combines note-taking with AI summarization, auto-tagging, and conversational querying to create a personal knowledge system.',
   },
   {
-    question: 'How does the AI summarization work?',
-    answer: 'Our AI analyzes your notes and articles to extract key insights and generate concise summaries. It uses advanced natural language processing to understand context and preserve the most important information. You can customize summary length and style to match your preferences.',
+    question: 'How does AI summarization work?',
+    answer: 'When you save a note or article with substantial content, our AI automatically generates a concise 2-3 sentence summary. This happens server-side using advanced language models, so your content never leaves our secure infrastructure.',
   },
   {
-    question: 'Can I import my existing notes?',
-    answer: 'Absolutely! We support importing from Notion, Evernote, Obsidian, Roam Research, and plain Markdown files. Our import process preserves your existing structure and automatically applies smart tagging to help you discover connections in your existing knowledge.',
+    question: 'Can I query my knowledge base conversationally?',
+    answer: 'Yes! Use the AI Chat feature to ask natural language questions like "What did I learn about productivity?" and get intelligent answers sourced directly from your notes, with references to the original items.',
   },
   {
-    question: 'Is my data secure and private?',
-    answer: 'Security is our top priority. All data is encrypted at rest and in transit using industry-standard AES-256 encryption. We never train our AI models on your private content, and you can export or delete your data at any time. We\'re SOC 2 Type II compliant.',
+    question: 'What technology stack is used?',
+    answer: 'The frontend uses React with Vite, Tailwind CSS, GSAP animations, and Three.js for WebGL effects. The backend runs on Node.js/Express with Prisma ORM and PostgreSQL with pgvector for semantic search. AI features are powered by Google Gemini.',
   },
   {
-    question: 'What makes this different from other note-taking apps?',
-    answer: 'Unlike traditional note-taking apps, Second Brain uses AI to actively help you organize and connect your knowledge. Features like automatic tagging, knowledge graphs, and conversational queries transform your notes from static storage into an intelligent system that surfaces insights when you need them.',
+    question: 'Is my data secure?',
+    answer: 'Absolutely. All AI processing happens server-side through secure API calls. Your data is stored in PostgreSQL with encrypted connections. We follow industry best practices for data security and never share your knowledge base with third parties.',
   },
   {
-    question: 'Do you offer a free trial for Pro features?',
-    answer: 'Yes! Every new account gets a 14-day free trial of Pro features. No credit card required. After the trial, you can choose to upgrade or continue with our generous free plan.',
+    question: 'Can I integrate Second Brain with other tools?',
+    answer: 'Yes! We provide a public REST API at /api/public/brain that supports querying, listing items, and generating summaries. You can also embed our search widget on any website using a simple script tag or React component.',
   },
 ];
 
+function FAQItem({ faq, index }: { faq: typeof faqs[0]; index: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const itemRef = useRef<HTMLDivElement>(null);
+
+  const toggle = () => {
+    if (!contentRef.current) return;
+
+    if (!isOpen) {
+      // Open
+      gsap.set(contentRef.current, { height: 'auto' });
+      const height = contentRef.current.offsetHeight;
+      gsap.fromTo(contentRef.current,
+        { height: 0, opacity: 0 },
+        { height, opacity: 1, duration: 0.4, ease: 'power2.out' }
+      );
+    } else {
+      // Close
+      gsap.to(contentRef.current, {
+        height: 0, opacity: 0, duration: 0.3, ease: 'power2.in',
+      });
+    }
+    setIsOpen(!isOpen);
+  };
+
+  // Entrance animation
+  useEffect(() => {
+    if (!itemRef.current) return;
+    gsap.fromTo(itemRef.current,
+      { y: 30, opacity: 0 },
+      {
+        y: 0, opacity: 1, duration: 0.6, ease: 'power3.out',
+        scrollTrigger: { trigger: itemRef.current, start: 'top 90%', toggleActions: 'play none none none' },
+      }
+    );
+  }, [index]);
+
+  return (
+    <div
+      ref={itemRef}
+      className="border-b border-white/[0.06] last:border-b-0"
+    >
+      <button
+        onClick={toggle}
+        className="w-full flex items-center justify-between py-5 px-1 text-left group"
+      >
+        <span className="text-white font-medium text-[15px] sm:text-base group-hover:text-indigo-300 transition-colors pr-4">
+          {faq.question}
+        </span>
+        <ChevronDown
+          className={`w-5 h-5 text-gray-500 flex-shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180 text-indigo-400' : ''}`}
+        />
+      </button>
+      <div ref={contentRef} className="overflow-hidden" style={{ height: 0, opacity: 0 }}>
+        <p className="text-gray-400 text-sm leading-relaxed pb-5 px-1">
+          {faq.answer}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function FAQ() {
   const sectionRef = useRef<HTMLElement>(null);
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const headingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!sectionRef.current) return;
-
-    const ctx = gsap.context(() => {
-      gsap.fromTo(
-        sectionRef.current,
-        { opacity: 0 },
-        {
-          opacity: 1,
-          duration: 1,
-          scrollTrigger: {
-            trigger: sectionRef.current,
-            start: 'top 80%',
-            toggleActions: 'play none none reverse',
-          },
-        }
-      );
-    }, sectionRef);
-
-    return () => ctx.revert();
+    if (!headingRef.current) return;
+    gsap.fromTo(headingRef.current,
+      { y: 50, opacity: 0 },
+      {
+        y: 0, opacity: 1, duration: 0.8, ease: 'power3.out',
+        scrollTrigger: { trigger: headingRef.current, start: 'top 85%', toggleActions: 'play none none none' },
+      }
+    );
   }, []);
-
-  const toggleFAQ = (index: number) => {
-    setOpenIndex(openIndex === index ? null : index);
-  };
 
   return (
     <section ref={sectionRef} className="py-24 lg:py-32 relative">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Section header */}
-        <div className="text-center mb-16">
+        {/* Header */}
+        <div ref={headingRef} className="text-center mb-14">
+          <p className="text-indigo-400 text-sm font-semibold uppercase tracking-widest mb-4">FAQ</p>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4">
-            Frequently <span className="text-gradient">Asked</span>
+            Common <span className="text-gradient">Questions</span>
           </h2>
-          <p className="text-gray-400 text-lg">
+          <p className="text-gray-400 text-lg max-w-xl mx-auto">
             Everything you need to know about Second Brain
           </p>
         </div>
 
-        {/* FAQ list */}
-        <div className="space-y-4">
-          {faqs.map((faq, index) => {
-            const isOpen = openIndex === index;
-
-            return (
-              <div
-                key={index}
-                className={cn(
-                  'rounded-xl border transition-all duration-300',
-                  isOpen
-                    ? 'bg-white/[0.05] border-indigo-500/30'
-                    : 'bg-white/[0.02] border-white/[0.08] hover:border-white/20'
-                )}
-              >
-                <button
-                  onClick={() => toggleFAQ(index)}
-                  className="w-full flex items-center justify-between p-6 text-left"
-                >
-                  <span className="text-white font-medium pr-4">{faq.question}</span>
-                  <div
-                    className={cn(
-                      'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300',
-                      isOpen
-                        ? 'bg-indigo-500 text-white rotate-45'
-                        : 'bg-white/10 text-gray-400'
-                    )}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </div>
-                </button>
-
-                <div
-                  className={cn(
-                    'overflow-hidden transition-all duration-300',
-                    isOpen ? 'max-h-96' : 'max-h-0'
-                  )}
-                >
-                  <div className="px-6 pb-6">
-                    <div className="h-px bg-white/10 mb-4" />
-                    <p className="text-gray-400 leading-relaxed">{faq.answer}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Contact CTA */}
-        <div className="text-center mt-12">
-          <p className="text-gray-500">
-            Still have questions?{' '}
-            <button className="text-indigo-400 hover:text-indigo-300 transition-colors">
-              Reach out to our team
-            </button>
-          </p>
+        {/* FAQ items */}
+        <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] px-6 sm:px-8 divide-y-0">
+          {faqs.map((faq, index) => (
+            <FAQItem key={index} faq={faq} index={index} />
+          ))}
         </div>
       </div>
     </section>
