@@ -14,6 +14,20 @@ type KnowledgeDoc = {
     metadata?: Record<string, unknown>;
 };
 
+type UserDoc = {
+    _id?: ObjectId;
+    email: string;
+    passwordHash: string;
+    name: string;
+    createdAt: Date;
+    updatedAt: Date;
+    preferences?: {
+        theme?: 'dark' | 'light';
+        autoSummarize?: boolean;
+        defaultTags?: string[];
+    };
+};
+
 let client: MongoClient | null = null;
 let db: Db | null = null;
 
@@ -37,6 +51,11 @@ export async function getKnowledgeCollection(): Promise<Collection<KnowledgeDoc>
     return database.collection<KnowledgeDoc>('knowledge_items');
 }
 
+export async function getUsersCollection(): Promise<Collection<UserDoc>> {
+    const database = await getDb();
+    return database.collection<UserDoc>('users');
+}
+
 export const toItem = (doc: KnowledgeDoc) => ({
     id: doc._id?.toString() || '',
     title: doc.title,
@@ -49,4 +68,17 @@ export const toItem = (doc: KnowledgeDoc) => ({
     updatedAt: doc.updatedAt,
     userId: doc.userId,
     metadata: doc.metadata,
+});
+
+export const toUser = (doc: UserDoc) => ({
+    id: doc._id?.toString() || '',
+    email: doc.email,
+    name: doc.name,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    preferences: {
+        theme: doc.preferences?.theme === 'light' ? 'light' : 'dark',
+        autoSummarize: doc.preferences?.autoSummarize ?? true,
+        defaultTags: doc.preferences?.defaultTags ?? [],
+    },
 });

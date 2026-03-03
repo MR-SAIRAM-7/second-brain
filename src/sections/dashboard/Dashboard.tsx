@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { 
   Brain, 
   Search, 
   Plus, 
-  Filter, 
   Grid3X3, 
   List, 
   Sparkles, 
@@ -27,19 +26,23 @@ import {
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/db';
 import { aiService } from '@/lib/ai';
-import type { KnowledgeItem, KnowledgeType, CreateKnowledgeInput } from '@/types';
+import { motion, AnimatePresence } from 'framer-motion';
+import type { KnowledgeItem, KnowledgeType, CreateKnowledgeInput, User } from '@/types';
 import type { GraphResult } from '@/types/ai';
 import ReactFlow, { Background, Controls, type Edge as FlowEdge, type Node as FlowNode } from 'reactflow';
 import cytoscape, { type Core as CyCore } from 'cytoscape';
 import 'reactflow/dist/style.css';
 import GlassCard from '@/components/animations/GlassCard';
+import AuthModal from '@/components/AuthModal';
 
 interface DashboardProps {
   onBack: () => void;
   onViewDocs: () => void;
+  onSignOut?: () => void;
+  user?: User | null;
 }
 
-export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
+export default function Dashboard({ onBack, onViewDocs, onSignOut, user }: DashboardProps) {
   const [items, setItems] = useState<KnowledgeItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<KnowledgeItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,11 +56,30 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [activeItem, setActiveItem] = useState<KnowledgeItem | null>(null);
   const [initialAction, setInitialAction] = useState<ViewerAction>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(user || null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const hasApiKey = Boolean(import.meta.env.VITE_API_KEY);
 
-  // Load data
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.2
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    show: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
+  };
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
       const [knowledgeItems, tags] = await Promise.all([
         db.knowledge.getAll(),
         db.knowledge.getAllTags(),
@@ -65,11 +87,37 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
       setItems(knowledgeItems);
       setFilteredItems(knowledgeItems);
       setAllTags(tags);
+    } catch (err) {
+      console.error('Failed to load knowledge:', err);
+      setShowAuthModal(true);
+    } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  // Auth bootstrap + data load
+  useEffect(() => {
+    const init = async () => {
+      if (hasApiKey) {
+        await loadData();
+        setAuthChecked(true);
+        return;
+      }
+
+      try {
+        const current = await db.user.getCurrent();
+        setCurrentUser(current);
+        await loadData();
+      } catch (err) {
+        console.warn('Auth required, opening sign-in', err);
+        setShowAuthModal(true);
+      } finally {
+        setAuthChecked(true);
+      }
     };
 
-    loadData();
-  }, []);
+    void init();
+  }, [hasApiKey, loadData]);
 
   // Filter items
   useEffect(() => {
@@ -98,6 +146,28 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
     setFilteredItems(filtered);
   }, [items, searchQuery, selectedType, selectedTags]);
 
+  const stats = useMemo(() => {
+    const total = items.length;
+    const summarized = items.filter((i) => !!i.summary).length;
+    const insights = items.filter((i) => i.type === 'insight').length;
+    const words = items.reduce((sum, item) => sum + (item.metadata?.wordCount ?? item.content.split(/\s+/).length), 0);
+    const avgRead = total ? Math.max(1, Math.ceil(words / total / 200)) : 0;
+    return {
+      total,
+      summarized,
+      insights,
+      tags: allTags.length,
+      avgRead,
+    };
+  }, [items, allTags]);
+
+  const spotlightTags = useMemo(() => {
+    const source = selectedTags.length ? selectedTags : allTags;
+    return source.slice(0, 8);
+  }, [selectedTags, allTags]);
+
+  const recentItems = useMemo(() => items.slice(0, 3), [items]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -109,11 +179,19 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
       // Cmd/Ctrl + N - New note
       if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
         e.preventDefault();
+        if (!hasApiKey && !currentUser) {
+          setShowAuthModal(true);
+          return;
+        }
         setIsCreateModalOpen(true);
       }
       // Cmd/Ctrl + / - AI Chat
       if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
+        if (!hasApiKey && !currentUser) {
+          setShowAuthModal(true);
+          return;
+        }
         setIsAIChatOpen(true);
       }
       // Escape - Close modals
@@ -126,7 +204,7 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [hasApiKey, currentUser]);
 
   const handleCreateItem = async (input: CreateKnowledgeInput) => {
     const newItem = await db.knowledge.create(input);
@@ -164,201 +242,392 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
     );
   };
 
+  const requireAuth = () => {
+    if (!hasApiKey && !currentUser) {
+      setShowAuthModal(true);
+      return false;
+    }
+    return true;
+  };
+
+  const openCreateModal = () => {
+    if (!requireAuth()) return;
+    setIsCreateModalOpen(true);
+  };
+
+  const openAIChatModal = () => {
+    if (!requireAuth()) return;
+    setIsAIChatOpen(true);
+  };
+
+  if (!authChecked && !hasApiKey) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="flex items-center gap-3 text-gray-300">
+          <div className="w-4 h-4 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+          <span>Checking session…</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-black">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-black/80 backdrop-blur-xl border-b border-white/5">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            {/* Left */}
-            <div className="flex items-center gap-4">
-              <button
-                onClick={onBack}
-                className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center">
-                  <Brain className="w-5 h-5 text-white" />
-                </div>
-                <span className="font-semibold text-white">Second Brain</span>
+    <div className="relative min-h-screen bg-gradient-to-br from-black via-[#0a0a1a] to-[#0b0b22] text-white">
+      <div className="pointer-events-none absolute inset-0 opacity-50 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.14),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(236,72,153,0.1),transparent_25%),radial-gradient(circle_at_40%_80%,rgba(59,130,246,0.08),transparent_30%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:28px_28px] opacity-20" />
+
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-black/50 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-900/40">
+                <Brain className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-indigo-300">Second Brain</p>
+                <p className="text-sm text-gray-400">AI knowledge operations</p>
               </div>
             </div>
+          </div>
 
-            {/* Center - Search */}
-            <div className="hidden md:flex flex-1 max-w-md mx-8">
-              <div className="relative w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
-                  type="text"
-                  placeholder="Search your knowledge... (Cmd+K)"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500/50 transition-colors"
-                />
-              </div>
-            </div>
-
-            {/* Right */}
-            <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2">
+            <button
+              onClick={() => setIsCommandPaletteOpen(true)}
+              className="px-3 py-2 rounded-lg bg-white/5 text-xs text-gray-300 border border-white/10 hover:border-indigo-400/40 hover:text-white"
+            >
+              Cmd + K
+            </button>
+            <button
+              onClick={onViewDocs}
+              className="px-3 py-2 rounded-lg bg-white/5 text-xs text-gray-300 border border-white/10 hover:border-indigo-400/40 hover:text-white"
+            >
+              API & Docs
+            </button>
+            {onSignOut && (
               <button
-                onClick={() => setIsAIChatOpen(true)}
-                className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 transition-colors"
+                onClick={onSignOut}
+                className="px-3 py-2 rounded-lg bg-white/5 text-xs text-gray-300 border border-white/10 hover:border-red-400/40 hover:text-white"
               >
-                <Bot className="w-4 h-4" />
-                <span className="text-sm">Ask AI</span>
+                Sign out
               </button>
-              <button
-                onClick={() => setIsCreateModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline text-sm">New</span>
-              </button>
-            </div>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Main content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Filters bar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-          {/* Type filters */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            {[
-              { value: 'all', label: 'All', icon: null },
-              { value: 'note', label: 'Notes', icon: FileText },
-              { value: 'article', label: 'Articles', icon: BookOpen },
-              { value: 'insight', label: 'Insights', icon: Lightbulb },
-              { value: 'link', label: 'Links', icon: Link2 },
-            ].map((type) => {
-              const Icon = type.icon;
-              return (
+      <motion.main 
+        className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10"
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+      >
+        <div className="grid lg:grid-cols-[2fr,1fr] gap-6 items-stretch">
+          <motion.div variants={itemVariants}>
+            <GlassCard className="p-6 relative overflow-hidden h-full">
+              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/5 to-transparent" />
+              <div className="relative flex flex-col gap-6">
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs uppercase tracking-[0.3em] text-indigo-300">Command Center</p>
+                  <h1 className="text-3xl font-semibold text-white">Curate, summarize, and interrogate your knowledge</h1>
+                  <p className="text-gray-400">Search, filter, and trigger AI actions from one unified surface.</p>
+                </div>
+
+                <div className="grid md:grid-cols-[1.3fr,1fr] gap-3 mt-auto">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                      type="text"
+                      placeholder="Search notes, tags, sources"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500/60 transition-colors"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    <button
+                      onClick={openCreateModal}
+                      className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-[0_10px_35px_rgba(99,102,241,0.35)] hover:-translate-y-0.5 transition-transform"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Capture knowledge
+                    </button>
+                    <button
+                      onClick={openAIChatModal}
+                      className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 text-gray-200 border border-white/10 hover:border-indigo-400/40"
+                    >
+                      <Bot className="w-4 h-4" />
+                      Ask AI
+                    </button>
+                    <button
+                      onClick={() => setIsCommandPaletteOpen(true)}
+                      className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 text-gray-200 border border-white/10 hover:border-indigo-400/40"
+                    >
+                      <Command className="w-4 h-4" />
+                      Palette
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          </motion.div>
+
+          <motion.div variants={itemVariants}>
+            <GlassCard className="p-6 h-full flex flex-col">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <p className="text-xs text-gray-500">Workspace</p>
+                  <p className="text-lg font-semibold text-white">{currentUser?.name || 'Guest user'}</p>
+                  <p className="text-sm text-gray-400">{currentUser?.email || 'API key session'}</p>
+                </div>
+                <div className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 text-xs border border-emerald-500/20">
+                  Live
+                </div>
+              </div>
+              <div className="space-y-3 text-sm text-gray-300 mt-auto">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-300" />
+                  <span>Summaries generated on ingest if content is long.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <GitBranch className="w-4 h-4 text-indigo-300" />
+                  <span>Mind maps and graphs are generated per note on demand.</span>
+                </div>
                 <button
-                  key={type.value}
-                  onClick={() => setSelectedType(type.value as KnowledgeType | 'all')}
-                  className={cn(
-                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors',
-                    selectedType === type.value
-                      ? 'bg-indigo-500 text-white'
-                      : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
-                  )}
+                  onClick={onViewDocs}
+                  className="inline-flex items-center gap-2 text-indigo-300 hover:text-indigo-200 text-sm"
                 >
-                  {Icon && <Icon className="w-4 h-4" />}
-                  {type.label}
+                  View API & widget guide
+                  <ExternalLink className="w-4 h-4" />
                 </button>
-              );
-            })}
-          </div>
-
-          {/* View toggle */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={cn(
-                'p-2 rounded-lg transition-colors',
-                viewMode === 'grid'
-                  ? 'bg-white/10 text-white'
-                  : 'text-gray-500 hover:text-white'
-              )}
-            >
-              <Grid3X3 className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={cn(
-                'p-2 rounded-lg transition-colors',
-                viewMode === 'list'
-                  ? 'bg-white/10 text-white'
-                  : 'text-gray-500 hover:text-white'
-              )}
-            >
-              <List className="w-5 h-5" />
-            </button>
-          </div>
+              </div>
+            </GlassCard>
+          </motion.div>
         </div>
 
-        {/* Tags filter */}
-        {allTags.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mb-8 pb-2">
-            <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
-            {allTags.map((tag) => (
+        <motion.div 
+          className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4"
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+        >
+          {[{
+            label: 'Total items',
+            value: stats.total,
+            icon: FileText,
+            accent: 'from-indigo-500 to-purple-500',
+          }, {
+            label: 'AI summaries',
+            value: stats.summarized,
+            icon: Sparkles,
+            accent: 'from-amber-400 to-orange-500',
+          }, {
+            label: 'Avg. reading time',
+            value: stats.avgRead ? `${stats.avgRead} min` : '—',
+            icon: BookOpen,
+            accent: 'from-cyan-400 to-sky-500',
+          }, {
+            label: 'Tracked tags',
+            value: stats.tags,
+            icon: Tag,
+            accent: 'from-emerald-400 to-green-500',
+          }].map((card) => {
+            const Icon = card.icon;
+            return (
+              <motion.div key={card.label} variants={itemVariants} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                <GlassCard className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">{card.label}</p>
+                    <p className="text-2xl font-semibold text-white mt-1">{card.value}</p>
+                  </div>
+                  <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${card.accent} flex items-center justify-center text-black`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
+                </GlassCard>
+              </motion.div>
+            );
+          })}
+        </motion.div>
+
+        <div className="grid lg:grid-cols-[320px,1fr] gap-6 items-start">
+          <motion.div variants={itemVariants}>
+            <GlassCard className="p-5 space-y-4 sticky top-24">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Filters</p>
+                <p className="text-white font-medium">Tune what you see</p>
+              </div>
               <button
-                key={tag}
-                onClick={() => toggleTag(tag)}
-                className={cn(
-                  'flex items-center gap-1 px-3 py-1 rounded-full text-xs whitespace-nowrap transition-colors',
-                  selectedTags.includes(tag)
-                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                    : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
-                )}
-              >
-                <Tag className="w-3 h-3" />
-                {tag}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Results count */}
-        <div className="flex items-center justify-between mb-6">
-          <p className="text-gray-500 text-sm">
-            {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}
-          </p>
-          <button
-            onClick={onViewDocs}
-            className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
-          >
-            View API Docs →
-          </button>
-        </div>
-
-        {/* Items grid/list */}
-        {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full" />
-          </div>
-        ) : filteredItems.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-gray-500" />
-            </div>
-            <h3 className="text-white font-medium mb-2">No items found</h3>
-            <p className="text-gray-500 text-sm mb-4">
-              Try adjusting your filters or create a new item
-            </p>
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 transition-colors"
-            >
-              Create your first item
-            </button>
-          </div>
-        ) : (
-          <div
-            className={cn(
-              viewMode === 'grid'
-                ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6'
-                : 'space-y-4'
-            )}
-          >
-            {filteredItems.map((item) => (
-              <KnowledgeCard
-                key={item.id}
-                item={item}
-                viewMode={viewMode}
-                onDelete={handleDeleteItem}
-                onOpen={(item, action) => {
-                  setActiveItem(item);
-                  setInitialAction(action ?? null);
+                onClick={() => {
+                  setSelectedTags([]);
+                  setSelectedType('all');
+                  setSearchQuery('');
                 }}
-              />
-            ))}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                Reset
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">Types</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'all', label: 'All', icon: null },
+                  { value: 'note', label: 'Notes', icon: FileText },
+                  { value: 'article', label: 'Articles', icon: BookOpen },
+                  { value: 'insight', label: 'Insights', icon: Lightbulb },
+                  { value: 'link', label: 'Links', icon: Link2 },
+                  { value: 'idea', label: 'Ideas', icon: Sparkles },
+                ].map((type) => {
+                  const Icon = type.icon;
+                  const isActive = selectedType === type.value;
+                  return (
+                    <button
+                      key={type.value}
+                      onClick={() => setSelectedType(type.value as KnowledgeType | 'all')}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors',
+                        isActive
+                          ? 'border-indigo-400/50 bg-indigo-500/15 text-white'
+                          : 'border-white/10 bg-white/5 text-gray-300 hover:border-indigo-400/40'
+                      )}
+                    >
+                      {Icon && <Icon className="w-4 h-4" />}
+                      {type.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Tags</span>
+                <span>{selectedTags.length ? `${selectedTags.length} selected` : `${allTags.length} available`}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {spotlightTags.length === 0 && <p className="text-xs text-gray-600">No tags yet</p>}
+                {spotlightTags.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => toggleTag(tag)}
+                    className={cn(
+                      'px-3 py-1 rounded-full text-xs border transition-colors',
+                      selectedTags.includes(tag)
+                        ? 'bg-indigo-500/20 text-indigo-200 border-indigo-400/40'
+                        : 'bg-white/5 text-gray-300 border-white/10 hover:border-indigo-400/40'
+                    )}
+                  >
+                    #{tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {recentItems.length > 0 && (
+              <div className="space-y-2 pt-1 border-t border-white/5">
+                <p className="text-xs text-gray-500">Recently added</p>
+                <div className="space-y-2">
+                  {recentItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveItem(item);
+                        setInitialAction(null);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                    >
+                      <p className="text-sm text-white line-clamp-1">{item.title}</p>
+                      <p className="text-xs text-gray-500 line-clamp-1">{item.type} • {item.tags.slice(0, 3).join(', ')}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </GlassCard>
+        </motion.div>
+
+        <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Results</p>
+                <p className="text-white font-medium">{filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={cn('p-2 rounded-lg border', viewMode === 'grid' ? 'border-indigo-400/50 bg-indigo-500/10 text-white' : 'border-white/10 text-gray-400 hover:border-indigo-400/40')}
+                >
+                  <Grid3X3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={cn('p-2 rounded-lg border', viewMode === 'list' ? 'border-indigo-400/50 bg-indigo-500/10 text-white' : 'border-white/10 text-gray-400 hover:border-indigo-400/40')}
+                >
+                  <List className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {isLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[...Array(6)].map((_, idx) => (
+                  <div key={idx} className="h-40 rounded-xl bg-white/5 border border-white/5 animate-pulse" />
+                ))}
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <GlassCard className="p-10 text-center border border-dashed border-white/10">
+                <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-white/5 flex items-center justify-center">
+                  <Search className="w-6 h-6 text-gray-400" />
+                </div>
+                <p className="text-white font-medium mb-2">No items match these filters</p>
+                <p className="text-gray-500 text-sm mb-4">Adjust search or start capturing a new note.</p>
+                <div className="flex justify-center gap-2">
+                  <button
+                    onClick={openCreateModal}
+                    className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500"
+                  >
+                    Create item
+                  </button>
+                  <button
+                    onClick={openAIChatModal}
+                    className="px-4 py-2 rounded-lg bg-white/5 text-gray-200 text-sm border border-white/10 hover:border-indigo-400/40"
+                  >
+                    Ask AI
+                  </button>
+                </div>
+              </GlassCard>
+            ) : (
+              <motion.div 
+                variants={containerVariants}
+                initial="hidden"
+                animate="show"
+                className={cn(viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-3')}
+              >
+                {filteredItems.map((item) => (
+                  <motion.div key={item.id} variants={itemVariants} layout>
+                    <KnowledgeCard
+                      item={item}
+                      viewMode={viewMode}
+                      onDelete={handleDeleteItem}
+                      onOpen={(item, action) => {
+                        setActiveItem(item);
+                        setInitialAction(action ?? null);
+                      }}
+                    />
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      </motion.main>
 
       {activeItem && (
         <ItemViewer
@@ -400,11 +669,11 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
           onClose={() => setIsCommandPaletteOpen(false)}
           onCreate={() => {
             setIsCommandPaletteOpen(false);
-            setIsCreateModalOpen(true);
+            openCreateModal();
           }}
           onAIChat={() => {
             setIsCommandPaletteOpen(false);
-            setIsAIChatOpen(true);
+            openAIChatModal();
           }}
           onViewDocs={() => {
             setIsCommandPaletteOpen(false);
@@ -412,6 +681,16 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
           }}
         />
       )}
+
+      <AuthModal
+        open={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthenticated={(u) => {
+          setCurrentUser(u);
+          setShowAuthModal(false);
+          void loadData();
+        }}
+      />
     </div>
   );
 }

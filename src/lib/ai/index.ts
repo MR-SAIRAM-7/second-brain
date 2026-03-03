@@ -2,18 +2,36 @@ import type { KnowledgeItem, AIQueryResult, KnowledgeType } from '@/types';
 import type { GraphResult, MindMapResult } from '@/types/ai';
 
 const API_BASE = '/api/public/brain';
-const API_KEY = import.meta.env.VITE_API_KEY || 'dev-key';
+const API_KEY = import.meta.env.VITE_API_KEY;
+const AUTH_TOKEN_KEY = 'sb_jwt';
 
-const headers = () => ({
-  'Content-Type': 'application/json',
-  ...(API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}),
-});
+const getAuthToken = () => {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+};
+
+const authHeader = () => {
+  const token = getAuthToken();
+  if (token) return `Bearer ${token}`;
+  if (API_KEY) return `Bearer ${API_KEY}`;
+  return undefined;
+};
+
+const headers = () => {
+  const auth = authHeader();
+  return {
+    'Content-Type': 'application/json',
+    ...(auth ? { Authorization: auth } : {}),
+  };
+};
+
+const jsonHeaders = headers;
 
 export const aiService = {
   summarize: async (content: string): Promise<string> => {
     const res = await fetch(`${API_BASE}/summarize`, {
       method: 'POST',
-      headers: headers(),
+      headers: jsonHeaders(),
       body: JSON.stringify({ content, maxLength: 400 }),
     });
     if (!res.ok) return content;
@@ -21,14 +39,21 @@ export const aiService = {
     return data.data?.summary || content;
   },
 
-  autoTag: async (_content: string, _title: string): Promise<string[]> => {
-    return [];
+  autoTag: async (content: string, title: string): Promise<string[]> => {
+    const res = await fetch(`${API_BASE}/autotag`, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ content, title }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.data?.tags || [];
   },
 
   query: async (question: string, _knowledgeBase: KnowledgeItem[]): Promise<AIQueryResult> => {
     const res = await fetch(`${API_BASE}/query`, {
       method: 'POST',
-      headers: headers(),
+      headers: jsonHeaders(),
       body: JSON.stringify({ q: question, limit: 5 }),
     });
     const data = await res.json();
@@ -58,7 +83,7 @@ export const aiService = {
   mindMap: async (title: string, content: string): Promise<MindMapResult> => {
     const res = await fetch(`${API_BASE}/mindmap`, {
       method: 'POST',
-      headers: headers(),
+      headers: jsonHeaders(),
       body: JSON.stringify({ title, content }),
     });
     if (!res.ok) {
@@ -71,7 +96,7 @@ export const aiService = {
   knowledgeGraph: async (title: string, content: string): Promise<GraphResult> => {
     const res = await fetch(`${API_BASE}/graph`, {
       method: 'POST',
-      headers: headers(),
+      headers: jsonHeaders(),
       body: JSON.stringify({ title, content }),
     });
     if (!res.ok) {

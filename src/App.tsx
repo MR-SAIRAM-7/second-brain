@@ -13,15 +13,20 @@ import CTA from '@/sections/landing/CTA';
 import Footer from '@/sections/landing/Footer';
 import Dashboard from '@/sections/dashboard/Dashboard';
 import Docs from '@/sections/docs/Docs';
+import { Auth } from '@/sections/auth/Auth';
+import db from '@/lib/db';
+import type { User } from '@/types';
 
 gsap.registerPlugin(ScrollTrigger);
 
-type View = 'landing' | 'dashboard' | 'docs';
+type View = 'landing' | 'dashboard' | 'docs' | 'auth';
+const AUTH_TOKEN_KEY = 'sb_jwt';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('landing');
   const [isLoading, setIsLoading] = useState(true);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,6 +34,20 @@ function App() {
       setIsLoading(false);
     }, 1200);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+    if (!token) return;
+
+    db.user.getCurrent()
+      .then((current) => {
+        setUser(current);
+        setCurrentView('dashboard');
+      })
+      .catch(() => {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+      });
   }, []);
 
   useEffect(() => {
@@ -88,9 +107,22 @@ function App() {
     });
   }, [isTransitioning]);
 
-  const handleGetStarted = () => transitionTo('dashboard');
+  const handleGetStarted = () => {
+    const hasToken = typeof window !== 'undefined' && !!localStorage.getItem(AUTH_TOKEN_KEY);
+    transitionTo(hasToken ? 'dashboard' : 'auth');
+  };
   const handleViewDocs = () => transitionTo('docs');
   const handleBackToLanding = () => transitionTo('landing');
+  const handleAuthSuccess = ({ token, user }: { token: string; user: User }) => {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    setUser(user);
+    transitionTo('dashboard');
+  };
+  const handleSignOut = () => {
+    db.auth.logout();
+    setUser(null);
+    transitionTo('auth');
+  };
 
   // Loading screen
   if (isLoading) {
@@ -142,8 +174,17 @@ function App() {
             </>
           )}
 
+          {currentView === 'auth' && (
+            <Auth onBack={handleBackToLanding} onSuccess={handleAuthSuccess} />
+          )}
+
           {currentView === 'dashboard' && (
-            <Dashboard onBack={handleBackToLanding} onViewDocs={handleViewDocs} />
+            <Dashboard
+              onBack={handleBackToLanding}
+              onViewDocs={handleViewDocs}
+              onSignOut={handleSignOut}
+              user={user}
+            />
           )}
 
           {currentView === 'docs' && (

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { ObjectId } from 'mongodb';
 import multer from 'multer';
@@ -49,11 +49,20 @@ const graphSchema = z.object({
     content: z.string().min(20),
 });
 
+const autoTagSchema = z.object({
+    title: z.string().default(''),
+    content: z.string().min(10),
+});
+
 const withTimestamp = (payload: unknown) => ({
     success: true,
     data: payload,
     timestamp: new Date().toISOString(),
 });
+
+type AuthedRequest = Request & { userId?: string };
+
+const resolveUserId = (req: AuthedRequest) => req.userId || 'public';
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -71,9 +80,10 @@ const parseId = (id: string) => {
 // GET all items
 router.get('/items', async (req, res) => {
     try {
+        const userId = resolveUserId(req as AuthedRequest);
         const col = await getKnowledgeCollection();
         const { type, tag, search } = req.query;
-        const where: Record<string, unknown> = {};
+        const where: Record<string, unknown> = { userId };
 
         if (type && type !== 'all') {
             where.type = String(type);
@@ -99,10 +109,11 @@ router.get('/items', async (req, res) => {
 });
 
 // GET tags
-router.get('/tags', async (_req, res) => {
+router.get('/tags', async (req, res) => {
     try {
+        const userId = resolveUserId(req as AuthedRequest);
         const col = await getKnowledgeCollection();
-        const docs = await col.find({}, { projection: { tags: 1 } }).toArray();
+        const docs = await col.find({ userId }, { projection: { tags: 1 } }).toArray();
         const allTags = new Set<string>();
         docs.forEach((item) => item.tags?.forEach((tag) => allTags.add(tag)));
 
@@ -116,6 +127,7 @@ router.get('/tags', async (_req, res) => {
 // POST new item
 router.post('/items', async (req, res) => {
     try {
+        const userId = resolveUserId(req as AuthedRequest);
         const col = await getKnowledgeCollection();
         const parsed = createItemSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -146,7 +158,7 @@ router.post('/items', async (req, res) => {
             summary,
             createdAt: now,
             updatedAt: now,
-            userId: 'user1',
+            userId,
             metadata: {
                 wordCount,
                 readingTime: Math.ceil(wordCount / 200),
@@ -167,6 +179,7 @@ router.post('/items', async (req, res) => {
 // Upload file and ingest as knowledge item
 router.post('/upload', upload.single('file'), async (req, res) => {
     try {
+        const userId = resolveUserId(req as AuthedRequest);
         const col = await getKnowledgeCollection();
         const file = req.file;
         if (!file) {
@@ -210,7 +223,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
             summary,
             createdAt: now,
             updatedAt: now,
-            userId: 'user1',
+            userId,
             metadata: {
                 wordCount,
                 readingTime: Math.ceil(wordCount / 200),
@@ -237,6 +250,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 router.put('/items/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        const userId = resolveUserId(req as AuthedRequest);
         const col = await getKnowledgeCollection();
         const parsed = updateItemSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -259,16 +273,16 @@ router.put('/items/:id', async (req, res) => {
         };
 
         const result = await col.findOneAndUpdate(
-            { _id: oid },
+            { _id: oid, userId },
             { $set: updateDoc },
             { returnDocument: 'after' }
         );
 
-        if (!result.value) {
+        if (!result) {
             return res.status(404).json({ success: false, error: 'Not found' });
         }
 
-        const updated = toItem(result.value);
+        const updated = toItem(result);
 
         res.json(withTimestamp(updated));
     } catch (error) {
@@ -281,13 +295,13 @@ router.put('/items/:id', async (req, res) => {
 router.delete('/items/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        const userId = resolveUserId(req as AuthedRequest);
         const col = await getKnowledgeCollection();
         const oid = parseId(id);
         if (!oid) {
             return res.status(400).json({ success: false, error: 'Invalid id' });
         }
-
-        await col.deleteOne({ _id: oid });
+        await col.deleteOne({ _id: oid, userId });
         res.json(withTimestamp({ deleted: true }));
     } catch (error) {
         console.error('Error deleting item:', error);
@@ -295,11 +309,12 @@ router.delete('/items/:id', async (req, res) => {
     }
 });
 
-const runQuery = async (q: string, limit: number) => {
+const runQuery = async (q: string, limit: number, userId: string) => {
     const col = await getKnowledgeCollection();
     const regex = new RegExp(q, 'i');
     const docs = await col
         .find({
+            userId,
             $or: [{ title: regex }, { content: regex }, { tags: regex }],
         })
         .limit(limit)
@@ -308,7 +323,7 @@ const runQuery = async (q: string, limit: number) => {
     let contextItems = docs.map(toItem);
 
     if (contextItems.length === 0) {
-        const fallback = await col.find({}).sort({ createdAt: -1 }).limit(limit).toArray();
+        const fallback = await col.find({ userId }).sort({ createdAt: -1 }).limit(limit).toArray();
         contextItems = fallback.map(toItem);
     }
 
@@ -324,13 +339,14 @@ const runQuery = async (q: string, limit: number) => {
 // POST semantic query / RAG
 router.post('/query', async (req, res) => {
     try {
+        const userId = resolveUserId(req as AuthedRequest);
         const parsed = querySchema.safeParse(req.body);
         if (!parsed.success) {
             return res.status(400).json({ success: false, error: parsed.error.flatten() });
         }
 
         const { q, limit = 5 } = parsed.data;
-        const data = await runQuery(q, limit);
+        const data = await runQuery(q, limit, userId);
 
         res.json(withTimestamp(data));
     } catch (error) {
@@ -342,6 +358,7 @@ router.post('/query', async (req, res) => {
 // GET semantic query (matches docs)
 router.get('/query', async (req, res) => {
     try {
+        const userId = resolveUserId(req as AuthedRequest);
         const parsed = querySchema.safeParse({
             q: req.query.q,
             limit: req.query.limit,
@@ -351,7 +368,7 @@ router.get('/query', async (req, res) => {
         }
 
         const { q, limit = 5 } = parsed.data;
-        const data = await runQuery(q, limit);
+    const data = await runQuery(q, limit, userId);
 
         res.json(withTimestamp(data));
     } catch (error) {
@@ -373,6 +390,23 @@ router.post('/summarize', async (req, res) => {
         res.json(withTimestamp({ summary }));
     } catch (error) {
         console.error('Error summarizing content:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+});
+
+// Auto-tag content
+router.post('/autotag', async (req, res) => {
+    try {
+        const parsed = autoTagSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return res.status(400).json({ success: false, error: parsed.error.flatten() });
+        }
+
+        const { title, content } = parsed.data;
+        const tags = await aiService.autoTag(content, title || '');
+        res.json(withTimestamp({ tags }));
+    } catch (error) {
+        console.error('Error auto-tagging content:', error);
         res.status(500).json({ success: false, error: 'Internal server error' });
     }
 });
