@@ -2,13 +2,33 @@ import OpenAI from 'openai';
 import dotenv from 'dotenv';
 dotenv.config();
 
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+
+const isOpenAIConfigured = (): boolean => {
+  const key = OPENAI_API_KEY.trim();
+  if (!key) return false;
+
+  const placeholderValues = new Set([
+    'your_openai_api_key_here',
+    'dummy_key_to_prevent_crash_when_missing',
+    'changeme',
+  ]);
+
+  if (placeholderValues.has(key.toLowerCase())) {
+    return false;
+  }
+
+  return key.startsWith('sk-');
+};
+
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'dummy_key_to_prevent_crash_when_missing',
+  apiKey: OPENAI_API_KEY || 'dummy_key_to_prevent_crash_when_missing',
 });
 
 export async function processKnowledgeItemContent(content: string) {
-  if (!process.env.OPENAI_API_KEY) {
-      console.warn("OPENAI_API_KEY is not set. Returning mock data.");
+  if (!isOpenAIConfigured()) {
+      console.warn("OPENAI_API_KEY is missing or placeholder. Returning mock data.");
       return {
           summary: "This is a mock summary because OpenAI API Key is missing. Connect your key to get accurate AI summaries.",
           tags: ["mock-tag", "setup-required"],
@@ -33,7 +53,7 @@ export async function processKnowledgeItemContent(content: string) {
     `;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: OPENAI_MODEL,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       response_format: { type: "json_object" }
@@ -52,8 +72,8 @@ export async function processKnowledgeItemContent(content: string) {
     console.error("Error processing with OpenAI:", error);
     // Fallback if API fails
     return {
-      summary: "Failed to generate AI summary.",
-      tags: ["error"]
+      summary: "AI summary is temporarily unavailable. Your note was saved successfully and can be summarized later.",
+      tags: ["ai-unavailable", "saved"]
     };
   }
 }

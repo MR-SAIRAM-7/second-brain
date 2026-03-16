@@ -38,7 +38,21 @@ router.get('/', async (req, res) => {
 // POST a new note with optional file upload
 router.post('/', upload.single('file'), async (req, res) => {
   try {
-    const { title, content, type, url } = req.body;
+    const { title, content } = req.body;
+    const incomingType = String(req.body.type || 'note').toLowerCase();
+    const normalizedType = incomingType === 'document' ? 'article' : incomingType;
+    const url = req.body.sourceUrl || req.body.url;
+
+    const allowedTypes = new Set(['note', 'link', 'insight', 'article', 'idea']);
+
+    if (!allowedTypes.has(normalizedType)) {
+      return res.status(400).json({ error: `Invalid type: ${incomingType}` });
+    }
+
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Both title and content are required' });
+    }
+
     let fileUrl = '';
 
     if (req.file) {
@@ -54,8 +68,14 @@ router.post('/', upload.single('file'), async (req, res) => {
     const aiResult = await processKnowledgeItemContent(contentToProcess);
     
     // Merge user tags with AI tags if the frontend sends them (assuming frontend sends them as comma-separated string)
-    let finalTagsStr = req.body.tags || '';
-    let finalTags = finalTagsStr ? finalTagsStr.split(',').map((t: string) => t.trim()) : [];
+    const rawTags = req.body.tags;
+    let finalTags: string[] = [];
+
+    if (Array.isArray(rawTags)) {
+      finalTags = rawTags.map((t) => String(t).trim()).filter(Boolean);
+    } else if (typeof rawTags === 'string' && rawTags.trim()) {
+      finalTags = rawTags.split(',').map((t: string) => t.trim()).filter(Boolean);
+    }
     
     // Add unique AI tags
     aiResult.tags.forEach((tag: string) => {
@@ -65,7 +85,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const newItem = new KnowledgeItem({
       title,
       content,
-      type,
+      type: normalizedType,
       url,
       fileUrl,
       summary: aiResult.summary,

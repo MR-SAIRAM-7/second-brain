@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IKnowledgeItem extends Document {
   title: string;
   content: string;
-  type: 'note' | 'link' | 'insight' | 'document';
+  type: 'note' | 'link' | 'insight' | 'article' | 'idea' | 'document';
   url?: string;
   fileUrl?: string;
   summary?: string;
@@ -18,7 +18,7 @@ const KnowledgeItemSchema: Schema = new Schema(
     content: { type: String, required: true },
     type: {
       type: String,
-      enum: ['note', 'link', 'insight', 'document'],
+      enum: ['note', 'link', 'insight', 'article', 'idea', 'document'],
       required: true,
     },
     url: { type: String },
