@@ -1,0 +1,34 @@
+# Server-level ignore file (if git is initialized in /app/server)
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Coverage and cache
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor settings
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

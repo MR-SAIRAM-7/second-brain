@@ -1,0 +1,42 @@
+# Workspace-level ignore file (if git is initialized at workspace root)
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor settings
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Frontend app artifacts
+app/node_modules/
+app/dist/
+app/.vite/
+app/coverage/
+app/*.tsbuildinfo
+
+# Frontend env files
+app/.env
+app/.env.*
+!app/.env.example
+
+# Backend server artifacts
+app/server/node_modules/
+app/server/dist/
+app/server/build/
+app/server/coverage/
+app/server/.nyc_output/
+app/server/*.tsbuildinfo
+
+# Backend env files
+app/server/.env
+app/server/.env.*
+!app/server/.env.example
