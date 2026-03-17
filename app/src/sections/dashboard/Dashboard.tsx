@@ -113,7 +113,7 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title' | 'relevance'>('newest');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAIChatOpen, setIsAIChatOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -175,7 +175,34 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
       );
     }
 
-    if (sortBy === 'newest') {
+    const getRelevanceScore = (item: KnowledgeItem, query: string) => {
+      if (!query.trim()) return 0;
+      const lowerQuery = query.toLowerCase();
+      const title = item.title.toLowerCase();
+      const content = htmlToPlainText(item.content).toLowerCase();
+      const tags = item.tags.join(' ').toLowerCase();
+
+      let score = 0;
+      if (title.includes(lowerQuery)) score += 5;
+      if (content.includes(lowerQuery)) score += 2;
+      if (tags.includes(lowerQuery)) score += 3;
+
+      const queryTokens = lowerQuery.split(/\s+/).filter(Boolean);
+      for (const token of queryTokens) {
+        if (token.length < 2) continue;
+        if (title.includes(token)) score += 2;
+        if (content.includes(token)) score += 1;
+        if (tags.includes(token)) score += 2;
+      }
+
+      return score;
+    };
+
+    if (sortBy === 'relevance' && searchQuery.trim()) {
+      filtered.sort(
+        (a, b) => getRelevanceScore(b, searchQuery) - getRelevanceScore(a, searchQuery)
+      );
+    } else if (sortBy === 'newest') {
       filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     } else if (sortBy === 'oldest') {
       filtered.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -464,12 +491,13 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
               <span className="text-xs text-gray-400 px-1">Sort</span>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'title')}
+                onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'title' | 'relevance')}
                 className="bg-transparent text-sm text-white focus:outline-none pr-1"
               >
                 <option value="newest" className="bg-slate-900">Newest first</option>
                 <option value="oldest" className="bg-slate-900">Oldest first</option>
                 <option value="title" className="bg-slate-900">Title A-Z</option>
+                <option value="relevance" className="bg-slate-900">Relevance</option>
               </select>
             </div>
 
@@ -557,8 +585,24 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
 
         {/* Items grid/list */}
         {isLoading ? (
-          <div className="flex items-center justify-center h-72">
-            <div className="animate-spin w-9 h-9 border-2 border-indigo-500 border-t-transparent rounded-full" />
+          <div
+            className={cn(
+              viewMode === 'grid'
+                ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5'
+                : 'space-y-3'
+            )}
+          >
+            {Array.from({ length: viewMode === 'grid' ? 6 : 4 }).map((_, index) => (
+              <div
+                key={index}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 animate-pulse"
+              >
+                <div className="h-4 w-1/3 bg-white/10 rounded mb-3" />
+                <div className="h-5 w-4/5 bg-white/10 rounded mb-2" />
+                <div className="h-4 w-full bg-white/10 rounded mb-2" />
+                <div className="h-4 w-2/3 bg-white/10 rounded" />
+              </div>
+            ))}
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] text-center py-16 px-6">
@@ -1361,9 +1405,39 @@ interface AIChatModalProps {
   knowledgeBase?: KnowledgeItem[];
 }
 
+interface PublicQuerySource {
+  id: string;
+  title: string;
+  summary?: string;
+  url?: string | null;
+  type?: string;
+  tags?: string[];
+}
+
+interface PublicQueryResponse {
+  success?: boolean;
+  data?: {
+    query: string;
+    count: number;
+    answer: string;
+    confidence: number;
+    sources: PublicQuerySource[];
+  };
+  query?: string;
+  count?: number;
+  answers?: PublicQuerySource[];
+}
+
+type ChatSource = {
+  id: string;
+  title: string;
+  url?: string | null;
+  summary?: string;
+};
+
 function AIChatModal({ onClose }: AIChatModalProps) {
   const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState<{ type: 'user' | 'ai'; content: string; sources?: KnowledgeItem[] }[]>([
+  const [messages, setMessages] = useState<{ type: 'user' | 'ai'; content: string; sources?: ChatSource[] }[]>([
     { type: 'ai', content: 'Hello! I\'m your AI knowledge assistant. Ask me anything about your notes and I\'ll help you find relevant information.' },
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -1378,19 +1452,28 @@ function AIChatModal({ onClose }: AIChatModalProps) {
     setIsLoading(true);
 
     try {
-      const response = await axios.get(`${API_BASE_URL}/public/brain/query`, {
+      const response = await axios.get<PublicQueryResponse>(`${API_BASE_URL}/public/brain/query`, {
         params: { q: userQuery }
       });
       
       const result = response.data;
-      
-      // Formatting the response
-      const answer = `Found ${result.count} related items in your brain for "${result.query}".\n\n` + 
-        result.answers.map((ans: any) => `- **${ans.title}**: ${ans.summary}`).join('\n');
+      const data = result.data;
+
+      const sourcePool = data?.sources ?? result.answers ?? [];
+      const sources: ChatSource[] = sourcePool.map((source) => ({
+        id: source.id,
+        title: source.title,
+        summary: source.summary,
+        url: source.url,
+      }));
+
+      const answer = data?.answer
+        ? `${data.answer}\n\nConfidence: ${Math.round((data.confidence || 0) * 100)}%`
+        : `Found ${result.count || sources.length} related items for "${data?.query || result.query || userQuery}".`;
 
       setMessages((prev) => [
         ...prev,
-        { type: 'ai', content: answer, sources: result.answers },
+        { type: 'ai', content: answer, sources },
       ]);
     } catch (error) {
       console.error("AI Chat Error:", error);
@@ -1455,12 +1538,18 @@ function AIChatModal({ onClose }: AIChatModalProps) {
                     <p className="text-xs text-gray-500 mb-2">Sources:</p>
                     <div className="flex flex-wrap gap-2">
                       {message.sources.map((source) => (
-                        <span
+                        <a
                           key={source.id}
+                          href={source.url || '#'}
+                          target={source.url ? '_blank' : undefined}
+                          rel={source.url ? 'noreferrer' : undefined}
                           className="px-2 py-1 rounded-lg bg-white/10 text-xs text-gray-400"
+                          onClick={(e) => {
+                            if (!source.url) e.preventDefault();
+                          }}
                         >
                           {source.title}
-                        </span>
+                        </a>
                       ))}
                     </div>
                   </div>

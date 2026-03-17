@@ -1,73 +1,57 @@
-# React + TypeScript + Vite
+# Second Brain (Frontend + Backend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AI-powered knowledge system for capturing, organizing, and querying notes.
 
-Currently, two official plugins are available:
+## Core Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Knowledge capture with rich text, metadata, tags, source URL, and file attachment.
+- Dashboard with search, filtering, sorting (newest, oldest, title, relevance), and detail modal.
+- Server-side AI enrichment: summarization and auto-tagging at write time.
+- Conversational query with grounded answers and cited sources.
+- Public infrastructure:
+  - GET /api/public/brain/query
+  - GET /api/public/brain/items
+  - POST /api/public/brain/summarize
+  - GET /api/public/brain/widget (embeddable iframe widget)
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Frontend: React + Vite + Tailwind + GSAP + Three.js
+- Backend: Express + TypeScript
+- Database: MongoDB (Mongoose)
+- AI: OpenAI (server-side only, with safe fallback behavior)
 
-## Expanding the ESLint configuration
+## Local Setup
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+1. Install dependencies:
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+   npm install
+   npm --prefix server install
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+2. Configure environment variables:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+   Frontend (.env in app):
+   - VITE_API_BASE_URL=/api
+   - VITE_API_PROXY_TARGET=http://localhost:3001
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+   Backend (.env in app/server):
+   - PORT=3001
+   - MONGODB_URI=your_mongodb_uri
+   - OPENAI_API_KEY=your_openai_key
+   - OPENAI_MODEL=gpt-4o-mini (optional)
+   - CORS_ORIGIN=http://localhost:5173
+   - PUBLIC_API_KEY=optional_token_for_public_routes
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+3. Run app and server together:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+   npm run dev
+
+## Build
+
+- Frontend build: npm run build
+- Frontend preview: npm run preview
+
+## Documentation
+
+- Architecture notes: app/docs/architecture.md
+- In-app docs surface: Dashboard > View Docs

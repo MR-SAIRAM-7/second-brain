@@ -264,7 +264,7 @@ export function RichTextEditor({ content, onChange, placeholder, className, minH
 
     const currentHtml = editor.getHTML();
     if (content !== currentHtml) {
-      editor.commands.setContent(content || '<p></p>', false);
+      editor.commands.setContent(content || '<p></p>', { emitUpdate: false });
     }
   }, [content, editor]);
 

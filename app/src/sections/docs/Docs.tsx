@@ -30,10 +30,10 @@ const architectureComponents = [
   {
     layer: 'Frontend',
     components: [
-      { name: 'React + Vite', description: 'Modern UI framework with fast HMR', swappable: true },
+      { name: 'React + Vite', description: 'SPA with GSAP-driven interactions and modular sections', swappable: true },
       { name: 'Tailwind CSS', description: 'Utility-first styling', swappable: true },
       { name: 'shadcn/ui', description: 'Accessible component primitives', swappable: true },
-      { name: 'GSAP + Three.js', description: 'Animation and 3D graphics', swappable: true },
+      { name: 'GSAP + Three.js', description: 'Motion system and neural background visuals', swappable: true },
     ],
   },
   {
@@ -41,23 +41,23 @@ const architectureComponents = [
     components: [
       { name: 'Node.js/Express', description: 'API server and business logic', swappable: true },
       { name: 'AI Service Layer', description: 'OpenAI/Claude/Gemini integration', swappable: true },
-      { name: 'Authentication', description: 'JWT-based auth system', swappable: true },
+      { name: 'Public Brain Routes', description: 'API + embeddable widget surface', swappable: true },
     ],
   },
   {
     layer: 'Database',
     components: [
-      { name: 'PostgreSQL', description: 'Primary data store', swappable: true },
-      { name: 'pgvector', description: 'Vector search extension', swappable: false },
-      { name: 'Redis', description: 'Caching and sessions', swappable: true },
+      { name: 'MongoDB + Mongoose', description: 'Primary note store and schemas', swappable: true },
+      { name: 'Tag/Type Indexing', description: 'Fast filtering and retrieval paths', swappable: true },
+      { name: 'Timestamped Records', description: 'Immutable audit-friendly chronology', swappable: true },
     ],
   },
   {
     layer: 'AI/ML',
     components: [
-      { name: 'OpenAI API', description: 'GPT-4 for summarization and Q&A', swappable: true },
-      { name: 'Embedding Model', description: 'Text embeddings for semantic search', swappable: true },
-      { name: 'Vector Store', description: 'Pinecone/pgvector for similarity', swappable: true },
+      { name: 'OpenAI API', description: 'Server-side summarization, auto-tagging, and grounded Q&A', swappable: true },
+      { name: 'Fallback Heuristics', description: 'Graceful non-AI responses when key is missing', swappable: true },
+      { name: 'Prompt Layer', description: 'Structured JSON contracts for reliable outputs', swappable: true },
     ],
   },
 ];
@@ -71,7 +71,7 @@ const designPrinciples = [
   {
     name: 'Progressive Disclosure',
     description: 'Show only what\'s necessary, reveal depth on demand. The interface adapts to user expertise and context.',
-    implementation: 'The dashboard uses a clean grid view by default, with expandable cards and a command palette for power users. Advanced features like the knowledge graph are accessible but not overwhelming.',
+    implementation: 'The dashboard defaults to searchable cards with optional command palette and detail modals. Capture workflows expand only when summoned, keeping the surface focused.',
   },
   {
     name: 'Fluid Feedback',
@@ -79,9 +79,9 @@ const designPrinciples = [
     implementation: 'GSAP animations provide smooth transitions, loading states use skeleton screens, and the AI chat shows typing indicators. Micro-interactions on hover and click create a tactile feel.',
   },
   {
-    name: 'Knowledge Graph Visualization',
-    description: 'Connections between ideas should be discoverable and explorable.',
-    implementation: 'The knowledge graph uses D3.js/React Flow to render nodes and edges. AI automatically suggests connections based on semantic similarity and shared tags.',
+    name: 'Grounded AI Answers',
+    description: 'AI responses should cite user-owned data instead of fabricating context.',
+    implementation: 'Public query routes retrieve matching notes, then generate an answer constrained to those sources. The UI displays cited notes and optional source links.',
   },
   {
     name: 'Keyboard-First Navigation',
@@ -102,13 +102,15 @@ const apiEndpoints = [
     response: `{
   "success": true,
   "data": {
+    "query": "How do I review notes effectively?",
+    "count": 3,
     "answer": "Based on your notes...",
+    "confidence": 0.87,
     "sources": [
-      { "id": "1", "title": "Note Title", "relevance": 0.95 }
-    ],
-    "confidence": 0.87
+      { "id": "1", "title": "Spaced Repetition", "summary": "..." }
+    ]
   },
-  "timestamp": "2024-01-15T10:30:00Z"
+  "timestamp": "2026-03-17T10:30:00Z"
 }`,
   },
   {
@@ -119,6 +121,7 @@ const apiEndpoints = [
       { name: 'type', type: 'string', required: false, description: 'Filter by type (note, article, insight)' },
       { name: 'tag', type: 'string', required: false, description: 'Filter by tag' },
       { name: 'search', type: 'string', required: false, description: 'Search query' },
+      { name: 'limit', type: 'number', required: false, description: 'Result size (max 100)' },
     ],
     response: `{
   "success": true,
@@ -128,7 +131,7 @@ const apiEndpoints = [
     ],
     "total": 42
   },
-  "timestamp": "2024-01-15T10:30:00Z"
+  "timestamp": "2026-03-17T10:30:00Z"
 }`,
   },
   {
@@ -142,10 +145,9 @@ const apiEndpoints = [
     response: `{
   "success": true,
   "data": {
-    "summary": "Concise summary of the content...",
-    "keyPoints": ["Point 1", "Point 2"]
+    "summary": "Concise summary of the content..."
   },
-  "timestamp": "2024-01-15T10:30:00Z"
+  "timestamp": "2026-03-17T10:30:00Z"
 }`,
   },
 ];
@@ -169,8 +171,8 @@ export default function Docs({ onBack }: DocsProps) {
               <h1 className="text-4xl font-bold text-white mb-4">Documentation</h1>
               <p className="text-gray-400 text-lg">
                 Welcome to the Second Brain documentation. Here you'll find everything you need to 
-                understand the architecture, integrate with our API, and embed the knowledge widget 
-                in your own applications.
+                understand the architecture, integrate with the public brain API, and embed a live 
+                search widget in your own applications.
               </p>
             </div>
 
@@ -204,8 +206,8 @@ export default function Docs({ onBack }: DocsProps) {
                     <span className="text-indigo-400 font-medium">1</span>
                   </div>
                   <div>
-                    <h4 className="text-white font-medium">Create an account</h4>
-                    <p className="text-gray-500 text-sm">Sign up for free and start capturing knowledge</p>
+                    <h4 className="text-white font-medium">Run frontend and backend</h4>
+                    <p className="text-gray-500 text-sm">Start both services with npm run dev from the app folder</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
@@ -214,7 +216,7 @@ export default function Docs({ onBack }: DocsProps) {
                   </div>
                   <div>
                     <h4 className="text-white font-medium">Capture your first note</h4>
-                    <p className="text-gray-500 text-sm">Use the dashboard or API to add knowledge items</p>
+                    <p className="text-gray-500 text-sm">Use the dashboard capture modal or POST /api/notes</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
@@ -223,7 +225,7 @@ export default function Docs({ onBack }: DocsProps) {
                   </div>
                   <div>
                     <h4 className="text-white font-medium">Query with AI</h4>
-                    <p className="text-gray-500 text-sm">Ask questions and get answers from your knowledge base</p>
+                    <p className="text-gray-500 text-sm">Use GET /api/public/brain/query or the embeddable widget endpoint</p>
                   </div>
                 </div>
               </div>
@@ -337,7 +339,8 @@ export default function Docs({ onBack }: DocsProps) {
             <GlassCard className="p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Authentication</h3>
               <p className="text-gray-400 mb-4">
-                All API requests require an API key passed in the Authorization header:
+                Public routes can be protected by setting PUBLIC_API_KEY on the server.
+                When configured, pass it in the Authorization header:
               </p>
               <div className="relative">
                 <pre className="p-4 rounded-lg bg-black/50 text-sm font-mono text-gray-300 overflow-x-auto">
@@ -429,18 +432,20 @@ export default function Docs({ onBack }: DocsProps) {
             <GlassCard className="p-6">
               <h3 className="text-lg font-semibold text-white mb-4">Basic Embed</h3>
               <p className="text-gray-400 mb-4">
-                Add this script tag to your HTML:
+                Embed the hosted widget endpoint with an iframe:
               </p>
               <div className="relative">
                 <pre className="p-4 rounded-lg bg-black/50 text-sm font-mono text-gray-300 overflow-x-auto">
-{`<script 
-  src="https://secondbrain.app/widget.js" 
-  data-api-key="YOUR_API_KEY"
-  data-theme="dark"
-></script>`}
+{`<iframe
+  src="https://your-domain.com/api/public/brain/widget"
+  width="100%"
+  height="420"
+  style="border:0;border-radius:12px;"
+  loading="lazy"
+></iframe>`}
                 </pre>
                 <button
-                  onClick={() => handleCopy(`<script src="https://secondbrain.app/widget.js" data-api-key="YOUR_API_KEY" data-theme="dark"></script>`, 'embed-basic')}
+                  onClick={() => handleCopy(`<iframe src="https://your-domain.com/api/public/brain/widget" width="100%" height="420" style="border:0;border-radius:12px;" loading="lazy"></iframe>`, 'embed-basic')}
                   className="absolute top-2 right-2 p-2 rounded-lg hover:bg-white/10 text-gray-500 hover:text-white transition-colors"
                 >
                   {copiedCode === 'embed-basic' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -461,28 +466,28 @@ export default function Docs({ onBack }: DocsProps) {
                 </thead>
                 <tbody className="text-gray-400">
                   <tr>
-                    <td className="py-2 font-mono">data-api-key</td>
+                    <td className="py-2 font-mono">src</td>
                     <td className="py-2">string</td>
                     <td className="py-2">required</td>
-                    <td className="py-2">Your API key</td>
+                    <td className="py-2">Widget endpoint URL</td>
                   </tr>
                   <tr>
-                    <td className="py-2 font-mono">data-theme</td>
+                    <td className="py-2 font-mono">width</td>
                     <td className="py-2">string</td>
-                    <td className="py-2">"dark"</td>
-                    <td className="py-2">Widget theme (dark/light)</td>
+                    <td className="py-2">"100%"</td>
+                    <td className="py-2">Iframe width</td>
                   </tr>
                   <tr>
-                    <td className="py-2 font-mono">data-position</td>
+                    <td className="py-2 font-mono">height</td>
                     <td className="py-2">string</td>
-                    <td className="py-2">"bottom-right"</td>
-                    <td className="py-2">Widget position</td>
+                    <td className="py-2">"420"</td>
+                    <td className="py-2">Iframe height</td>
                   </tr>
                   <tr>
-                    <td className="py-2 font-mono">data-primary-color</td>
+                    <td className="py-2 font-mono">Authorization</td>
                     <td className="py-2">string</td>
-                    <td className="py-2">"#4F46E5"</td>
-                    <td className="py-2">Primary accent color</td>
+                    <td className="py-2">optional</td>
+                    <td className="py-2">Bearer token if PUBLIC_API_KEY is enabled</td>
                   </tr>
                 </tbody>
               </table>
@@ -491,32 +496,38 @@ export default function Docs({ onBack }: DocsProps) {
             <GlassCard className="p-6">
               <h3 className="text-lg font-semibold text-white mb-4">React Component</h3>
               <p className="text-gray-400 mb-4">
-                For React applications, use our official component:
+                You can also build your own component against the public query API:
               </p>
               <div className="relative">
                 <pre className="p-4 rounded-lg bg-black/50 text-sm font-mono text-gray-300 overflow-x-auto">
-{`import { SecondBrainWidget } from '@secondbrain/react';
+{`import axios from 'axios';
 
 function App() {
+  async function askBrain(question) {
+    const res = await axios.get('/api/public/brain/query', { params: { q: question } });
+    return res.data.data.answer;
+  }
+
   return (
-    <SecondBrainWidget
-      apiKey="YOUR_API_KEY"
-      theme="dark"
-      position="bottom-right"
-    />
+    <button onClick={() => askBrain('What are my best insights this week?')}>
+      Query Brain
+    </button>
   );
 }`}
                 </pre>
                 <button
-                  onClick={() => handleCopy(`import { SecondBrainWidget } from '@secondbrain/react';
+                  onClick={() => handleCopy(`import axios from 'axios';
 
 function App() {
+  async function askBrain(question) {
+    const res = await axios.get('/api/public/brain/query', { params: { q: question } });
+    return res.data.data.answer;
+  }
+
   return (
-    <SecondBrainWidget
-      apiKey="YOUR_API_KEY"
-      theme="dark"
-      position="bottom-right"
-    />
+    <button onClick={() => askBrain('What are my best insights this week?')}>
+      Query Brain
+    </button>
   );
 }`, 'embed-react')}
                   className="absolute top-2 right-2 p-2 rounded-lg hover:bg-white/10 text-gray-500 hover:text-white transition-colors"
@@ -534,7 +545,7 @@ function App() {
                     <Terminal className="w-8 h-8 text-indigo-400" />
                   </div>
                   <p className="text-gray-400">Widget preview would appear here</p>
-                  <p className="text-gray-600 text-sm mt-2">Install the widget to see it in action</p>
+                  <p className="text-gray-600 text-sm mt-2">Use /api/public/brain/widget to load the live iframe widget</p>
                 </div>
               </div>
             </GlassCard>
