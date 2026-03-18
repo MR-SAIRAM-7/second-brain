@@ -40,6 +40,88 @@ const sanitizeForPublic = (item: any) => ({
   createdAt: item.createdAt,
 });
 
+const SEARCH_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'is',
+  'are',
+  'was',
+  'were',
+  'what',
+  'when',
+  'where',
+  'who',
+  'why',
+  'how',
+  'of',
+  'to',
+  'for',
+  'in',
+  'on',
+  'at',
+  'and',
+  'or',
+  'about',
+  'my',
+  'me',
+  'your',
+  'our',
+  'their',
+  'with',
+  'from',
+  'by',
+  'it',
+  'this',
+  'that',
+  'these',
+  'those',
+]);
+
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const extractSearchTokens = (query: string): string[] => {
+  const rawTokens = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  const uniqueTokens: string[] = [];
+  for (const token of rawTokens) {
+    if (token.length < 3 || SEARCH_STOP_WORDS.has(token)) continue;
+    if (uniqueTokens.includes(token)) continue;
+    uniqueTokens.push(token);
+    if (uniqueTokens.length >= 8) break;
+  }
+
+  return uniqueTokens;
+};
+
+const getRelevanceScore = (item: any, originalQuery: string, tokens: string[]): number => {
+  const title = String(item.title || '').toLowerCase();
+  const content = String(item.content || '').toLowerCase();
+  const summary = String(item.summary || '').toLowerCase();
+  const tags = Array.isArray(item.tags) ? item.tags.map((tag: string) => tag.toLowerCase()) : [];
+
+  const normalizedQuery = originalQuery.toLowerCase();
+  let score = 0;
+
+  if (title.includes(normalizedQuery)) score += 16;
+  if (summary.includes(normalizedQuery)) score += 12;
+  if (content.includes(normalizedQuery)) score += 8;
+
+  for (const token of tokens) {
+    if (title.includes(token)) score += 5;
+    if (summary.includes(token)) score += 4;
+    if (content.includes(token)) score += 2;
+    if (tags.some((tag: string) => tag.includes(token))) score += 3;
+  }
+
+  return score;
+};
+
 // GET /api/public/brain/query
 router.get('/query', async (req, res) => {
   try {
@@ -54,19 +136,48 @@ router.get('/query', async (req, res) => {
     }
 
     const searchQuery = String(q);
+    const searchTokens = extractSearchTokens(searchQuery);
     const parsedLimit = Number(limit);
     const resultLimit = Number.isFinite(parsedLimit)
       ? Math.min(Math.max(Math.floor(parsedLimit), 1), 20)
       : 8;
 
-    const results = await KnowledgeItem.find({
+    const fullQueryRegex = { $regex: escapeRegex(searchQuery), $options: 'i' };
+
+    let results = await KnowledgeItem.find({
       $or: [
-        { title: { $regex: searchQuery, $options: 'i' } },
-        { content: { $regex: searchQuery, $options: 'i' } },
-        { summary: { $regex: searchQuery, $options: 'i' } },
-        { tags: { $regex: searchQuery, $options: 'i' } }
-      ]
-    }).limit(resultLimit).sort({ createdAt: -1 });
+        { title: fullQueryRegex },
+        { content: fullQueryRegex },
+        { summary: fullQueryRegex },
+        { tags: fullQueryRegex },
+      ],
+    })
+      .limit(resultLimit)
+      .sort({ createdAt: -1 });
+
+    if (results.length === 0 && searchTokens.length > 0) {
+      const tokenPatterns = searchTokens.map((token) => ({ $regex: escapeRegex(token), $options: 'i' }));
+
+      const tokenOrClauses = tokenPatterns.flatMap((pattern) => [
+        { title: pattern },
+        { content: pattern },
+        { summary: pattern },
+        { tags: pattern },
+      ]);
+
+      // Pull a larger candidate set, then score and trim for better natural-language relevance.
+      const candidateResults = await KnowledgeItem.find({ $or: tokenOrClauses })
+        .limit(Math.max(resultLimit * 4, 24))
+        .sort({ createdAt: -1 });
+
+      results = candidateResults
+        .sort((a: any, b: any) => {
+          const scoreDelta = getRelevanceScore(b, searchQuery, searchTokens) - getRelevanceScore(a, searchQuery, searchTokens);
+          if (scoreDelta !== 0) return scoreDelta;
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        })
+        .slice(0, resultLimit);
+    }
 
     const contextualSources = results.map((item) => ({
       id: String(item._id),
