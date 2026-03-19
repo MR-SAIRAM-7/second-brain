@@ -1,6 +1,7 @@
 import express from 'express';
 import KnowledgeItem from '../models/KnowledgeItem';
 import { answerKnowledgeQuery, summarizeFreeformContent } from '../services/openaiService';
+import { buildCloudinaryDeliveryUrl } from '../services/fileDeliveryService';
 
 const router = express.Router();
 
@@ -34,11 +35,15 @@ const sanitizeForPublic = (item: any) => ({
   title: item.title,
   summary: item.summary || item.content.substring(0, 180) + '...',
   contentPreview: item.content.substring(0, 320),
-  url: item.url || item.fileUrl || null,
+  url: item.url || buildCloudinaryDeliveryUrl(item) || null,
+  fileUrl: buildCloudinaryDeliveryUrl(item) || null,
   tags: item.tags || [],
   type: item.type,
   createdAt: item.createdAt,
 });
+
+const resolveFileUrl = (item: any): string => buildCloudinaryDeliveryUrl(item) || '';
+
 
 const SEARCH_STOP_WORDS = new Set([
   'a',
@@ -102,6 +107,7 @@ const extractSearchTokens = (query: string): string[] => {
 const getRelevanceScore = (item: any, originalQuery: string, tokens: string[]): number => {
   const title = String(item.title || '').toLowerCase();
   const content = String(item.content || '').toLowerCase();
+  const extractedText = String(item.extractedText || '').toLowerCase();
   const summary = String(item.summary || '').toLowerCase();
   const tags = Array.isArray(item.tags) ? item.tags.map((tag: string) => tag.toLowerCase()) : [];
 
@@ -111,11 +117,13 @@ const getRelevanceScore = (item: any, originalQuery: string, tokens: string[]): 
   if (title.includes(normalizedQuery)) score += 16;
   if (summary.includes(normalizedQuery)) score += 12;
   if (content.includes(normalizedQuery)) score += 8;
+  if (extractedText.includes(normalizedQuery)) score += 10;
 
   for (const token of tokens) {
     if (title.includes(token)) score += 5;
     if (summary.includes(token)) score += 4;
     if (content.includes(token)) score += 2;
+    if (extractedText.includes(token)) score += 3;
     if (tags.some((tag: string) => tag.includes(token))) score += 3;
   }
 
@@ -148,6 +156,7 @@ router.get('/query', async (req, res) => {
       $or: [
         { title: fullQueryRegex },
         { content: fullQueryRegex },
+        { extractedText: fullQueryRegex },
         { summary: fullQueryRegex },
         { tags: fullQueryRegex },
       ],
@@ -161,6 +170,7 @@ router.get('/query', async (req, res) => {
       const tokenOrClauses = tokenPatterns.flatMap((pattern) => [
         { title: pattern },
         { content: pattern },
+        { extractedText: pattern },
         { summary: pattern },
         { tags: pattern },
       ]);
@@ -184,10 +194,11 @@ router.get('/query', async (req, res) => {
       title: item.title,
       content: item.content,
       summary: item.summary,
+      extractedText: item.extractedText,
       tags: item.tags,
       createdAt: item.createdAt,
       url: item.url,
-      fileUrl: item.fileUrl,
+      fileUrl: resolveFileUrl(item),
     }));
 
     const aiAnswer = await answerKnowledgeQuery(searchQuery, contextualSources);
@@ -248,6 +259,7 @@ router.get('/items', async (req, res) => {
       query.$or = [
         { title: { $regex: String(search), $options: 'i' } },
         { content: { $regex: String(search), $options: 'i' } },
+        { extractedText: { $regex: String(search), $options: 'i' } },
         { summary: { $regex: String(search), $options: 'i' } },
       ];
     }

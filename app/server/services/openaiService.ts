@@ -6,6 +6,7 @@ type QuerySource = {
   id: string;
   title: string;
   content: string;
+  extractedText?: string;
   summary?: string;
   tags?: string[];
   createdAt?: Date | string;
@@ -71,6 +72,9 @@ const bestSourceSnippet = (item: QuerySource, maxSentences = 2): string => {
     const summaryText = firstSentences(summary, maxSentences);
     if (summaryText) return summaryText;
   }
+
+  const extractedTextSnippet = firstSentences(item.extractedText || '', Math.max(maxSentences, 3));
+  if (extractedTextSnippet) return extractedTextSnippet;
 
   const contentText = firstSentences(item.content || '', maxSentences);
   if (contentText) return contentText;
@@ -140,7 +144,9 @@ const answerFromLocalSources = (
   const subject = extractAgeQuestionSubject(question);
 
   for (const item of sources) {
-    const combinedText = toPlainText(`${item.title || ''} ${item.content || ''} ${item.summary || ''}`);
+    const combinedText = toPlainText(
+      `${item.title || ''} ${item.content || ''} ${item.summary || ''} ${item.extractedText || ''}`
+    );
     if (!combinedText) continue;
     if (!hasSubjectMatch(combinedText, subject)) continue;
 
@@ -411,8 +417,9 @@ Return strict JSON:
   const serializedContext = normalizedSources
     .map((item, index) => {
       const safeSummary = item.summary || item.content.slice(0, 240);
+      const safeDocumentText = toPlainText(item.extractedText || '').slice(0, 1200);
       const safeTags = item.tags?.join(', ') || 'none';
-      return `${index + 1}. [${item.id}] ${item.title}\nSummary: ${safeSummary}\nTags: ${safeTags}`;
+      return `${index + 1}. [${item.id}] ${item.title}\nSummary: ${safeSummary}\nDocument text: ${safeDocumentText || 'none'}\nTags: ${safeTags}`;
     })
     .join('\n\n');
 

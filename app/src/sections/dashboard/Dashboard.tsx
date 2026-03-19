@@ -56,6 +56,11 @@ const getContentPreview = (content: string, length = 140): string => {
   return plainText.length > length ? `${plainText.slice(0, length)}...` : plainText;
 };
 
+const isLikelyPdfLink = (url?: string | null): boolean => {
+  if (!url) return false;
+  return /\.pdf(?:$|[?#])/i.test(url) || /\/raw\/upload\/.*pdf/i.test(url);
+};
+
 const sanitizeRichHtml = (content: string): string => {
   if (!content) return '';
 
@@ -116,6 +121,7 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title' | 'relevance'>('newest');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAIChatOpen, setIsAIChatOpen] = useState(false);
+  const [activeNoteAIItem, setActiveNoteAIItem] = useState<KnowledgeItem | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<KnowledgeItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -229,6 +235,7 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
       // Cmd/Ctrl + / - AI Chat
       if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
+        setActiveNoteAIItem(null);
         setIsAIChatOpen(true);
       }
       // Escape - Close modals
@@ -346,7 +353,10 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setIsAIChatOpen(true)}
+                onClick={() => {
+                  setActiveNoteAIItem(null);
+                  setIsAIChatOpen(true);
+                }}
                 className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-cyan-500/10 text-cyan-300 border border-cyan-400/20 hover:bg-cyan-500/15 transition-colors"
               >
                 <Bot className="w-4 h-4" />
@@ -635,6 +645,10 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
                 viewMode={viewMode}
                 onDelete={handleDeleteItem}
                 onOpen={setSelectedItem}
+                onAskNote={(note) => {
+                  setActiveNoteAIItem(note);
+                  setIsAIChatOpen(true);
+                }}
               />
             ))}
           </div>
@@ -653,7 +667,11 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
       {/* AI Chat */}
       {isAIChatOpen && (
         <AIChatModal
-          onClose={() => setIsAIChatOpen(false)}
+          onClose={() => {
+            setIsAIChatOpen(false);
+            setActiveNoteAIItem(null);
+          }}
+          note={activeNoteAIItem}
           knowledgeBase={items}
         />
       )}
@@ -662,6 +680,11 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
         <NoteDetailModal
           item={selectedItem}
           onClose={() => setSelectedItem(null)}
+          onAskNote={(note) => {
+            setSelectedItem(null);
+            setActiveNoteAIItem(note);
+            setIsAIChatOpen(true);
+          }}
         />
       )}
 
@@ -675,6 +698,7 @@ export default function Dashboard({ onBack, onViewDocs }: DashboardProps) {
           }}
           onAIChat={() => {
             setIsCommandPaletteOpen(false);
+            setActiveNoteAIItem(null);
             setIsAIChatOpen(true);
           }}
           onViewDocs={() => {
@@ -693,9 +717,10 @@ interface KnowledgeCardProps {
   viewMode: 'grid' | 'list';
   onDelete: (id: string) => void;
   onOpen: (item: KnowledgeItem) => void;
+  onAskNote: (item: KnowledgeItem) => void;
 }
 
-function KnowledgeCard({ item, viewMode, onDelete, onOpen }: KnowledgeCardProps) {
+function KnowledgeCard({ item, viewMode, onDelete, onOpen, onAskNote }: KnowledgeCardProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const previewText = item.summary || getContentPreview(item.content, viewMode === 'list' ? 100 : 150);
   const relativeDate = formatRelativeDate(item.createdAt);
@@ -767,6 +792,17 @@ function KnowledgeCard({ item, viewMode, onDelete, onOpen }: KnowledgeCardProps)
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    onAskNote(item);
+                    setIsMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-cyan-300 hover:bg-white/5 transition-colors"
+                >
+                  <Bot className="w-4 h-4" />
+                  Ask this note
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
                     onDelete(item.id);
                     setIsMenuOpen(false);
                   }}
@@ -825,6 +861,17 @@ function KnowledgeCard({ item, viewMode, onDelete, onOpen }: KnowledgeCardProps)
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      onAskNote(item);
+                      setIsMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-cyan-300 hover:bg-white/5 transition-colors"
+                  >
+                    <Bot className="w-4 h-4" />
+                    Ask this note
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
                       onDelete(item.id);
                       setIsMenuOpen(false);
                     }}
@@ -878,12 +925,17 @@ function KnowledgeCard({ item, viewMode, onDelete, onOpen }: KnowledgeCardProps)
 interface NoteDetailModalProps {
   item: KnowledgeItem;
   onClose: () => void;
+  onAskNote: (item: KnowledgeItem) => void;
 }
 
-function NoteDetailModal({ item, onClose }: NoteDetailModalProps) {
+function NoteDetailModal({ item, onClose, onAskNote }: NoteDetailModalProps) {
   const safeHtml = sanitizeRichHtml(item.content);
-  const externalUrl = (item as any).sourceUrl || (item as any).url;
-  const fileUrl = (item as any).fileUrl;
+  const externalUrl = item.sourceUrl || (item as any).url;
+  const fileUrl = item.fileUrl || null;
+  const attachmentPreviewUrl = `${API_BASE_URL}/notes/${item.id}/attachment`;
+  const fileMimeType = String(item.fileMimeType || '').toLowerCase();
+  const fileFormat = String(item.fileFormat || '').toLowerCase();
+  const isPdfAttachment = Boolean(fileUrl) && (fileMimeType.includes('pdf') || fileFormat === 'pdf' || isLikelyPdfLink(fileUrl));
   const wordCount = htmlToPlainText(item.content).split(/\s+/).filter(Boolean).length;
 
   return (
@@ -915,6 +967,12 @@ function NoteDetailModal({ item, onClose }: NoteDetailModalProps) {
           <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-gray-300">
             {Math.max(1, Math.ceil(wordCount / 220))} min read
           </span>
+          <button
+            onClick={() => onAskNote(item)}
+            className="px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+          >
+            Ask this note
+          </button>
           {externalUrl && (
             <a
               href={externalUrl}
@@ -942,6 +1000,27 @@ function NoteDetailModal({ item, onClose }: NoteDetailModalProps) {
             className="prose prose-invert prose-sm sm:prose-base max-w-none prose-headings:text-white prose-p:text-gray-300 prose-strong:text-white prose-a:text-cyan-300 prose-a:no-underline hover:prose-a:underline prose-li:text-gray-300"
             dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
+
+          {isPdfAttachment && fileUrl && (
+            <div className="mt-8 rounded-2xl border border-white/10 bg-black/30 p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <p className="text-xs uppercase tracking-wide text-gray-400">PDF preview</p>
+                <a
+                  href={fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-cyan-300 hover:text-cyan-200"
+                >
+                  Open in new tab
+                </a>
+              </div>
+              <iframe
+                src={attachmentPreviewUrl}
+                title={`${item.title} PDF preview`}
+                className="w-full h-[55vh] rounded-xl border border-white/10 bg-[#05070c]"
+              />
+            </div>
+          )}
 
           {item.tags.length > 0 && (
             <div className="mt-8 pt-5 border-t border-white/10">
@@ -1402,6 +1481,7 @@ function CreateModal({ onClose, onCreate, availableTags }: CreateModalProps) {
 // AI Chat Modal Component
 interface AIChatModalProps {
   onClose: () => void;
+  note?: KnowledgeItem | null;
   knowledgeBase?: KnowledgeItem[];
 }
 
@@ -1410,6 +1490,7 @@ interface PublicQuerySource {
   title: string;
   summary?: string;
   url?: string | null;
+  fileUrl?: string | null;
   type?: string;
   tags?: string[];
 }
@@ -1428,6 +1509,17 @@ interface PublicQueryResponse {
   answers?: PublicQuerySource[];
 }
 
+interface NoteQueryResponse {
+  success?: boolean;
+  data?: {
+    noteId: string;
+    query: string;
+    answer: string;
+    confidence: number;
+    sources: PublicQuerySource[];
+  };
+}
+
 type ChatSource = {
   id: string;
   title: string;
@@ -1435,12 +1527,22 @@ type ChatSource = {
   summary?: string;
 };
 
-function AIChatModal({ onClose }: AIChatModalProps) {
+const buildInitialChatMessage = (note?: KnowledgeItem | null): string =>
+  note
+    ? `Ask me anything about "${note.title}". I will answer using this note and its attachments only.`
+    : 'Hello! I\'m your AI knowledge assistant. Ask me anything about your notes and I\'ll help you find relevant information.';
+
+function AIChatModal({ onClose, note }: AIChatModalProps) {
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<{ type: 'user' | 'ai'; content: string; sources?: ChatSource[] }[]>([
-    { type: 'ai', content: 'Hello! I\'m your AI knowledge assistant. Ask me anything about your notes and I\'ll help you find relevant information.' },
+    { type: 'ai', content: buildInitialChatMessage(note) },
   ]);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    setMessages([{ type: 'ai', content: buildInitialChatMessage(note) }]);
+    setQuery('');
+  }, [note?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1452,34 +1554,64 @@ function AIChatModal({ onClose }: AIChatModalProps) {
     setIsLoading(true);
 
     try {
-      const response = await axios.get<PublicQueryResponse>(`${API_BASE_URL}/public/brain/query`, {
-        params: { q: userQuery }
-      });
-      
-      const result = response.data;
-      const data = result.data;
+      if (note) {
+        const response = await axios.post<NoteQueryResponse>(`${API_BASE_URL}/notes/${note.id}/query`, {
+          question: userQuery,
+        });
 
-      const sourcePool = data?.sources ?? result.answers ?? [];
-      const sources: ChatSource[] = sourcePool.map((source) => ({
-        id: source.id,
-        title: source.title,
-        summary: source.summary,
-        url: source.url,
-      }));
+        const result = response.data;
+        const data = result.data;
+        const sourcePool = data?.sources ?? [];
+        const sources: ChatSource[] = sourcePool.map((source) => ({
+          id: source.id,
+          title: source.title,
+          summary: source.summary,
+          url: source.url || source.fileUrl,
+        }));
 
-      const answer = data?.answer
-        ? `${data.answer}\n\nConfidence: ${Math.round((data.confidence || 0) * 100)}%`
-        : `Found ${result.count || sources.length} related items for "${data?.query || result.query || userQuery}".`;
+        const answer = data?.answer
+          ? `${data.answer}\n\nConfidence: ${Math.round((data.confidence || 0) * 100)}%`
+          : `I could not generate an answer for "${userQuery}" from this note.`;
 
-      setMessages((prev) => [
-        ...prev,
-        { type: 'ai', content: answer, sources },
-      ]);
+        setMessages((prev) => [
+          ...prev,
+          { type: 'ai', content: answer, sources },
+        ]);
+      } else {
+        const response = await axios.get<PublicQueryResponse>(`${API_BASE_URL}/public/brain/query`, {
+          params: { q: userQuery }
+        });
+
+        const result = response.data;
+        const data = result.data;
+
+        const sourcePool = data?.sources ?? result.answers ?? [];
+        const sources: ChatSource[] = sourcePool.map((source) => ({
+          id: source.id,
+          title: source.title,
+          summary: source.summary,
+          url: source.url || source.fileUrl,
+        }));
+
+        const answer = data?.answer
+          ? `${data.answer}\n\nConfidence: ${Math.round((data.confidence || 0) * 100)}%`
+          : `Found ${result.count || sources.length} related items for "${data?.query || result.query || userQuery}".`;
+
+        setMessages((prev) => [
+          ...prev,
+          { type: 'ai', content: answer, sources },
+        ]);
+      }
     } catch (error) {
       console.error("AI Chat Error:", error);
       setMessages((prev) => [
         ...prev,
-        { type: 'ai', content: 'Sorry, I encountered an error searching your brain.' },
+        {
+          type: 'ai',
+          content: note
+            ? 'Sorry, I encountered an error while querying this note.'
+            : 'Sorry, I encountered an error searching your brain.',
+        },
       ]);
     } finally {
       setIsLoading(false);
@@ -1497,8 +1629,10 @@ function AIChatModal({ onClose }: AIChatModalProps) {
               <Bot className="w-4 h-4 text-indigo-400" />
             </div>
             <div>
-              <h3 className="text-white font-medium">AI Knowledge Assistant</h3>
-              <p className="text-xs text-gray-500">Powered by your notes</p>
+              <h3 className="text-white font-medium">{note ? `Ask: ${note.title}` : 'AI Knowledge Assistant'}</h3>
+              <p className="text-xs text-gray-500">
+                {note ? 'Focused on one note' : 'Powered by your notes'}
+              </p>
             </div>
           </div>
           <button
@@ -1580,7 +1714,7 @@ function AIChatModal({ onClose }: AIChatModalProps) {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Ask about your knowledge..."
+              placeholder={note ? 'Ask about this note only...' : 'Ask about your knowledge...'}
               className="flex-1 px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500/50 transition-colors"
             />
             <button

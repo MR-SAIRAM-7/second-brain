@@ -9,6 +9,9 @@ export interface KnowledgeItem {
   type: KnowledgeType;
   tags: string[];
   sourceUrl?: string;
+  fileUrl?: string;
+  fileMimeType?: string;
+  fileFormat?: string;
   summary?: string;
   createdAt: Date;
   updatedAt: Date;

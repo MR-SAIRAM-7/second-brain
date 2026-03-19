@@ -12,10 +12,20 @@ cloudinary.config({
 
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: {
-    // @ts-ignore
-    folder: 'second_brain_uploads', // Optional folder in Cloudinary
-    allowed_formats: ['jpg', 'png', 'jpeg', 'pdf', 'docx', 'txt'], // Allowed file formats
+  // @ts-ignore
+  params: async (_req, file) => {
+    const mimeType = String(file.mimetype || '').toLowerCase();
+    const isPdf = mimeType.includes('pdf');
+
+    return {
+      folder: 'second_brain_uploads',
+      allowed_formats: ['jpg', 'png', 'jpeg', 'pdf', 'docx', 'txt'],
+      resource_type: isPdf ? 'raw' : 'auto',
+      type: 'upload',
+      use_filename: true,
+      unique_filename: true,
+      overwrite: false,
+    };
   },
 });
 

@@ -6,6 +6,11 @@ export interface IKnowledgeItem extends Document {
   type: 'note' | 'link' | 'insight' | 'article' | 'idea' | 'document';
   url?: string;
   fileUrl?: string;
+  filePublicId?: string;
+  fileMimeType?: string;
+  fileFormat?: string;
+  fileResourceType?: string;
+  extractedText?: string;
   summary?: string;
   tags?: string[];
   createdAt: Date;
@@ -23,6 +28,11 @@ const KnowledgeItemSchema: Schema = new Schema(
     },
     url: { type: String },
     fileUrl: { type: String }, // For Cloudinary URLs
+    filePublicId: { type: String },
+    fileMimeType: { type: String },
+    fileFormat: { type: String },
+    fileResourceType: { type: String },
+    extractedText: { type: String },
     summary: { type: String },
     tags: [{ type: String }],
   },
